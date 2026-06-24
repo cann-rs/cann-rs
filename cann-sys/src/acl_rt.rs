@@ -37,6 +37,16 @@ pub enum aclCANNPackageName {
 // `libascendcl` FFI 函数声明，仅在启用 `ffi` 特性时编译。
 #[cfg(cann_sys_ffi)]
 unsafe extern "C" {
+    // 初始化 CANN 运行环境，必须在其他 ACL API 之前调用。
+    // # 安全性
+    // - `configPath` 可以传入 NULL 使用默认配置。
+    pub fn aclInit(configPath: *const c_char) -> aclError;
+
+    // 释放 CANN 运行环境资源。
+    // # 安全性
+    // - `deviceId` 传入 0 即可。
+    pub fn aclFinalize(deviceId: i32) -> aclError;
+
     // 查询指定软件包的版本字符串。
     // # 安全性
     // - `pkgName` 必须是有效的 NUL 结尾 C 字符串。
@@ -79,20 +89,26 @@ mod tests {
     #[test]
     #[ignore = "requires NPU driver"]
     fn test_link_sys_get_version_str() {
+        let ret = unsafe { aclInit(std::ptr::null()) };
+        assert_eq!(ret, ACL_SUCCESS);
         let pkg_name = CString::new("CANN").unwrap();
         let mut buf = [0u8; ACL_PKG_VERSION_MAX_SIZE];
         let ret =
             unsafe { aclsysGetVersionStr(pkg_name.as_ptr(), buf.as_mut_ptr() as *mut c_char) };
+        unsafe { aclFinalize(0) };
         assert_eq!(ret, ACL_SUCCESS);
     }
 
     #[test]
     #[ignore = "requires NPU driver"]
     fn test_sys_get_version_str_content() {
+        let ret = unsafe { aclInit(std::ptr::null()) };
+        assert_eq!(ret, ACL_SUCCESS);
         let pkg_name = CString::new("CANN").unwrap();
         let mut buf = [0u8; ACL_PKG_VERSION_MAX_SIZE];
         let ret =
             unsafe { aclsysGetVersionStr(pkg_name.as_ptr(), buf.as_mut_ptr() as *mut c_char) };
+        unsafe { aclFinalize(0) };
         assert_eq!(ret, ACL_SUCCESS);
         let version = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr() as *const c_char) };
         let version_str = version.to_str().unwrap();
@@ -109,18 +125,24 @@ mod tests {
     #[test]
     #[ignore = "requires NPU driver"]
     fn test_link_sys_get_version_num() {
+        let ret = unsafe { aclInit(std::ptr::null()) };
+        assert_eq!(ret, ACL_SUCCESS);
         let pkg_name = CString::new("CANN").unwrap();
         let mut num: i32 = 0;
         let ret = unsafe { aclsysGetVersionNum(pkg_name.as_ptr(), &mut num) };
+        unsafe { aclFinalize(0) };
         assert_eq!(ret, ACL_SUCCESS);
     }
 
     #[test]
     #[ignore = "requires NPU driver"]
     fn test_sys_get_version_num_plausible() {
+        let ret = unsafe { aclInit(std::ptr::null()) };
+        assert_eq!(ret, ACL_SUCCESS);
         let pkg_name = CString::new("CANN").unwrap();
         let mut num: i32 = 0;
         let ret = unsafe { aclsysGetVersionNum(pkg_name.as_ptr(), &mut num) };
+        unsafe { aclFinalize(0) };
         assert_eq!(ret, ACL_SUCCESS);
         assert!(
             (80_000_000..100_000_000).contains(&num),
