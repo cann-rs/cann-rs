@@ -1,0 +1,3 @@
+[workspace]
+members = ["cann-sys", "cann"]
+resolver = "2"
