@@ -1,6 +1,6 @@
 [package]
 name = "cann-sys"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 build = "build.rs"
 description = "Raw FFI bindings for Huawei Ascend CANN SDK (libascendcl)"

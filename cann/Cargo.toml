@@ -1,6 +1,6 @@
 [package]
 name = "cann"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Safe Rust wrapper for Huawei Ascend CANN NPU SDK"
 repository = "https://github.com/cann-rs/cann-rs"
