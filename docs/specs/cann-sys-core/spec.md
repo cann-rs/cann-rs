@@ -10,14 +10,15 @@ CANN SDK 提供 C API 用于 Ascend NPU 管理。Rust 生态缺乏对这些 API 
 
 - 在安装有 CANN 9.0.0 的系统上，`cargo run` 可输出当前 CANN 版本号（字符串和数值）
 - `cargo test` 包含一个版本号正确性的验证测试
-- 无 CANN SDK 时编译给出清晰可理解的错误信息（非段错误、非链接错误）
-- `cargo doc` 正常生成，所有 `pub unsafe` 项有 `// SAFETY:` 注释
+- 无 CANN SDK 时编译失败，错误信息包含 `"CANN SDK not found"` 和 `"ASCEND_TOOLKIT_HOME"` 字样的显式指引
+- `cargo doc` 正常生成
 
 ## User Stories
 
 | 角色 | 场景 | 期望结果 |
 |------|------|----------|
-| Rust 开发者 | 调用函数获取当前 CANN 版本号 | 返回 `"9.0.0"` 字符串或等价数值 |
+| Rust 开发者 | 获取 CANN 版本字符串 | 调用 `Version::str()` 返回 `"9.0.0"` |
+| Rust 开发者 | 获取 CANN 版本数值 | 调用 `Version::num()` 返回 `90000000` |
 | 集成工程师 | 在没有 CANN SDK 的环境构建 | 编译时得到清晰错误和修复指引 |
 | 安装维护者 | 自定义 CANN 安装路径 | 通过环境变量指定 SDK 路径 |
 
@@ -27,7 +28,7 @@ CANN SDK 提供 C API 用于 Ascend NPU 管理。Rust 生态缺乏对这些 API 
 - [ ] `aclsysGetVersionStr` 可从 Rust 调用并返回正确版本字符串
 - [ ] `aclsysGetVersionNum` 可从 Rust 调用并返回正确版本数字
 - [ ] 所有 `extern "C"` 函数签名与 C 头文件一致（含 `unsafe` 标注）
-- [ ] 无 CANN SDK 时编译失败，报错信息包含 `ASCEND_HOME` 环境变量的提示
+- [ ] 无 CANN SDK 时编译失败，报错信息包含 `ASCEND_TOOLKIT_HOME` 环境变量的提示
 - [ ] `cann-sys` 零外部依赖（`[dependencies]` 为空）
 
 ## Non-Goals

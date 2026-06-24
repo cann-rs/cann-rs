@@ -25,37 +25,37 @@
 |----|------|------|
 | cann-sys 类型/常量 | 与 C 头文件完全一致 | `aclsysGetVersionStr`, `aclError`, `ACL_SUCCESS` |
 | cann-sys 模块组织 | 按 C 头文件分组 | `acl_rt`, `acl_base_rt` |
-| cann 安全封装 | Rust 命名惯例 (CamelCase 类型, snake_case 函数) | `Version::get_str()`, `Context::new()` |
+| cann 安全封装 | Rust 命名惯例 (CamelCase 类型, snake_case 函数) | `Version::str()`, `Context::new()` |
 | cann 模块组织 | 按 CANN 概念组织 | `device`, `context`, `stream`, `memory` |
 
 ## 4. 错误处理
 
 - **cann-sys**: 直接返回 C 的 `aclError`（`int`），不做转换
-- **cann**: 定义 `cann::error::Error` 枚举，带 `std::error::Error` 实现，包含原始 `aclError` 码
+- **cann**: 定义 `cann::error::Error` 结构体，带 `std::error::Error` 实现，包含原始 `aclError` 码
 
 ## 5. 依赖管理
 
 - **cann-sys**: 零外部依赖（`[dependencies]` 为空，仅 `[build-dependencies]` 可用）
 - **cann**: 可依赖 `cann-sys`、`thiserror`、`tracing` 等，审计后加入
-- 所有 crate 不得引入 `unsafe` 操作的外部 crate（如 `libc` 除外）
+- **cann-sys** 严格遵守零依赖原则，不引入任何外部 crate
+- 其他 crate 引入外部依赖时需审计其依赖树的 `unsafe` 使用情况，未经审核不得引入
 
 ## 6. 测试要求
 
 - 每个 FFI 函数至少有一个**链接/调用测试**（验证符号可链接）
 - 需要 Ascend 硬件的测试标记为 `#[ignore]` 或 feature-gated（`#[cfg(feature = "hw_tests")]`）
 - 所有 safe 封装层需要纯逻辑单元测试（不依赖硬件）
-- **不可用硬件时应有 mock 策略**：使用 `cfg!(feature = "mock")` 替代真实调用
+- **依赖硬件的功能需要有 mock 策略**：使用 `#[cfg(feature = "mock")]` 标记 mock 实现；纯 API 调用（不依赖 NPU 设备）的 feature 不做此要求
 
 ## 7. 文档要求
 
 - 所有 `pub` 的 FFI 声明必须有 `///` doc，标注 C 函数原名
 - 所有 `pub` 的 cann 封装必须有 `///` doc，包含 usage example
-- 文档中须注明对应 CANN 版本（当前目标：≥ 9.0.0）
 
 ## 8. 预提交检查
 
 提交前必须通过：
-- [ ] `cargo check` 无 error/warning
-- [ ] `cargo test` 所有非硬件测试通过
-- [ ] `cargo doc` 无 broken link
+- [ ] 编译无 error/warning（Rust edition 2024）
+- [ ] 非硬件依赖的测试全部通过
+- [ ] 文档生成完整，无 broken link
 - [ ] 无未标注 `// SAFETY:` 的 `unsafe` 代码

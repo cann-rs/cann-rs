@@ -10,9 +10,8 @@
 
 **任务**：
 - 文件：`cann-sys/build.rs`
-- 实现 SDK 候选路径遍历（`ASCEND_TOOLKIT_HOME` → `ASCEND_HOME` → 默认路径）
-- 实现平台检测（`aarch64-linux` / `x86_64-linux`）
-- 验证头文件（`acl/acl_rt.h`）和库文件（`libascendcl.so`）存在
+- 实现 SDK 候选路径遍历（`ASCEND_TOOLKIT_HOME` → `ASCEND_HOME_PATH` → `ASCEND_HOME` → 默认路径）
+- 验证头文件（`include/acl/acl_rt.h`）和库文件（`lib64/libascendcl.so`）存在
 - 输出 `cargo:rustc-link-search` 和 `cargo:rustc-link-lib` 指令
 - 设置 `rerun-if-env-changed` 触发器
 - 无 SDK 时给出清晰错误信息
@@ -36,7 +35,7 @@
 - 其他本次 feature 用到的错误码
 
 **验证**：
-- [ ] `cassert_eq!(ACL_SUCCESS, 0)`
+- [ ] `assert_eq!(ACL_SUCCESS, 0)` 通过编译和执行
 - [ ] `cargo doc` 生成文档
 
 **依赖**：无
@@ -54,7 +53,8 @@
 - 声明 `ACL_PKG_VERSION_PARTS_MAX_SIZE`（= 64）
 
 **验证**：
-- [ ] `aclError` 类型可通过 `cfg(test)` 编译
+- [ ] `#[test] fn test_type_defs() { let _: aclError = ACL_SUCCESS; }` 在 `cargo test` 下通过
+- [ ] `ACL_PKG_VERSION_MAX_SIZE` 的值为 `128`
 
 **依赖**：无
 
@@ -112,7 +112,7 @@
 **验证**：
 - [ ] `cargo build` 自动执行 `build.rs`
 
-**依赖**：T1（需 build.rs 就位）
+**依赖**：无（可与 T1 并行执行）
 
 ---
 
@@ -125,7 +125,7 @@
 - 定义 `Error` 结构体（`code: aclError`, `message: String`）
 - 实现 `std::error::Error` trait
 - 实现 `std::fmt::Display` trait
-- 实现 `From<aclError>` 转换（`ACL_ERROR_INVALID_FILE` → 带消息的错误，其他 → Unknown）
+- 实现 `From<aclError>` 转换（`ACL_ERROR_INVALID_FILE` → 带消息的错误，其他 → 以原始数值保留在 message 中）
 
 **验证**：
 - [ ] `let e = Error::from(ACL_ERROR_INVALID_FILE);`
@@ -144,11 +144,12 @@
 - 定义 `pub struct Version;`
 - `Version::str() -> Result<String, Error>`:
   - 分配 128 字节缓冲区（`[0u8; 128]`）
-  - 调用 `aclsysGetVersionStr(c_str!("CANN"), buf)`
+  - 构造 C 字符串：`b"CANN\0".as_ptr() as *const c_char`
+  - 调用 `aclsysGetVersionStr(pkg_name, buf.as_mut_ptr() as *mut c_char)`
   - 检查返回值，失败返回 `Err`
-  - 成功将缓冲区转为 `String` 返回
+  - 成功后通过 `CStr::from_bytes_with_nul` 转为 `String` 返回
 - `Version::num() -> Result<i32, Error>`:
-  - 调用 `aclsysGetVersionNum(c_str!("CANN"), &mut num)`
+  - 调用 `aclsysGetVersionNum(b"CANN\0".as_ptr() as *const c_char, &mut num)`
   - 检查返回值，失败返回 `Err`
   - 成功返回数值
 - 使用 `std::ffi::CStr` 安全处理 C 字符串边界
@@ -166,11 +167,11 @@
 **输入**：T8 的 Version API
 
 **任务**：
-- 文件：`cann/src/lib.rs` — 声明 `pub mod error`、`pub mod version`
+- 文件：`cann/src/lib.rs` — 移除 `add` 函数 stub，声明 `pub mod error`、`pub mod version`
 - 文件：`cann/src/main.rs` — 调用 `Version::str()` / `Version::num()` 并 `println!`
 
 **验证**：
-- [ ] `cargo run -p cann` 输出类似 `CANN version: 9.0.0 (num: 90000000)`
+- [ ] `cargo run -p cann`（创建 main.rs 后自动识别为 bin target）输出 `CANN version: 9.0.0 (num: 90000000)`
 
 **依赖**：T8
 
@@ -179,10 +180,10 @@
 ## 任务执行顺序
 
 ```
-T1 ──→ T6 ──→ [T2, T3] ──→ T4 ──→ T5 ──→ T7 ──→ T8 ──→ T9
-                  ↑
-            (可并行,无依赖)
+[T1, T6, T2, T3] ──→ T4 ──→ T5 ──→ T7 ──→ T8 ──→ T9
+       ↑
+ (可并行,无依赖)
 ```
 
-**组间并发**：T2(T3) 与 T1 可同时执行（不同文件，无冲突）
+**组间并发**：T1(T6/T2/T3) 四者可同时执行（不同文件，无冲突）
 **组内串行**：T4→T5 必须串行（T4 产出被 T5 导入）

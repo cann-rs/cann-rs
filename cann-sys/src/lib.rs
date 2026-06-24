@@ -1,14 +1,7 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+pub mod acl_base_rt;
+pub mod acl_rt;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub use acl_base_rt::*;
+pub use acl_rt::*;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+include!(concat!(env!("OUT_DIR"), "/version_info.rs"));
