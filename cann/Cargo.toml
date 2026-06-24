@@ -11,4 +11,4 @@ categories = ["api-bindings", "hardware-support"]
 readme = "../README.md"
 
 [dependencies]
-cann-sys = { path = "../cann-sys", version = "0.1.0", features = ["ffi"] }
+cann-sys = { path = "../cann-sys", version = "0.1.1", features = ["ffi"] }
