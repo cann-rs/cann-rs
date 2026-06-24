@@ -9,6 +9,7 @@ documentation = "https://docs.rs/cann-sys"
 license = "MIT OR Apache-2.0"
 keywords = ["ascend", "cann", "huawei", "npu", "ffi"]
 categories = ["external-ffi-bindings", "hardware-support"]
+readme = "../README.md"
 links = "ascendcl"
 
 [dependencies]

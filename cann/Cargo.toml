@@ -8,6 +8,7 @@ documentation = "https://docs.rs/cann"
 license = "MIT OR Apache-2.0"
 keywords = ["ascend", "cann", "huawei", "npu"]
 categories = ["api-bindings", "hardware-support"]
+readme = "../README.md"
 
 [dependencies]
 cann-sys = { path = "../cann-sys", version = "0.1.0", features = ["ffi"] }
