@@ -1,6 +1,24 @@
+//! `cann-sys` 构建脚本。
+//!
+//! 负责：
+//! - 自动发现 CANN SDK 安装路径
+//! - 启用 `ffi` 特性时链接 `libascendcl.so`
+
 use std::path::PathBuf;
 use std::{env, fs};
 
+/// 查找 CANN SDK 安装目录。
+///
+/// 按优先级依次检测以下路径：
+/// 1. `ASCEND_TOOLKIT_HOME` 环境变量
+/// 2. `ASCEND_HOME_PATH` 环境变量
+/// 3. `ASCEND_HOME` 环境变量
+/// 4. `$HOME/Ascend/cann`
+/// 5. `/usr/local/Ascend`
+///
+/// 需要目录下存在 `include/acl/acl_rt.h` 和 `lib64/libascendcl.so` 才确认有效。
+///
+/// 返回 `(base_dir, include_dir, lib_dir)` 三元组。
 fn find_cann_sdk() -> (PathBuf, PathBuf, PathBuf) {
     let candidates = [
         env::var("ASCEND_TOOLKIT_HOME").ok().map(PathBuf::from),
@@ -22,12 +40,10 @@ fn find_cann_sdk() -> (PathBuf, PathBuf, PathBuf) {
     }
 
     eprintln!();
-    eprintln!("error: CANN SDK not found.");
+    eprintln!("错误: 未找到 CANN SDK。");
     eprintln!();
-    eprintln!(
-        "help: set ASCEND_TOOLKIT_HOME environment variable, or install CANN to the default location."
-    );
-    eprintln!("help: searched paths:");
+    eprintln!("提示: 设置 ASCEND_TOOLKIT_HOME 环境变量，或将 CANN 安装到默认路径。");
+    eprintln!("已搜索路径:");
     for candidate in candidates.iter().flatten() {
         eprintln!("  - {}", candidate.display());
     }
@@ -35,85 +51,8 @@ fn find_cann_sdk() -> (PathBuf, PathBuf, PathBuf) {
     std::process::exit(1);
 }
 
-fn extract_cann_version(include_dir: &std::path::Path) -> (String, i64) {
-    let version_h = include_dir.join("version").join("cann_version.h");
-    if version_h.exists()
-        && let Ok(content) = fs::read_to_string(&version_h)
-    {
-        for line in content.lines() {
-            let line = line.trim();
-            if let Some(val) = line.strip_prefix("#define CANN_VERSION_STR ") {
-                let ver = val.trim_matches('"').trim().to_string();
-                let num = parse_version_num(&ver);
-                return (ver, num);
-            }
-        }
-    }
-    eprintln!(
-        "warning: {} not found or parseable; falling back to path name",
-        version_h.display()
-    );
-    let name = include_dir
-        .parent()
-        .and_then(|p| p.file_name())
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
-    if let Some(ver) = extract_version_from_name(name) {
-        let num = parse_version_num(&ver);
-        return (ver, num);
-    }
-    eprintln!("warning: could not determine CANN version");
-    ("0.0.0".to_string(), 0)
-}
-
-fn extract_version_from_name(name: &str) -> Option<String> {
-    let bytes = name.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i].is_ascii_digit() {
-            let start = i;
-            let mut dots = 0u8;
-            while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
-                if bytes[i] == b'.' {
-                    dots += 1;
-                }
-                if dots > 2 {
-                    break;
-                }
-                i += 1;
-            }
-            if dots == 2 {
-                let ver = &name[start..i];
-                let parts: Vec<&str> = ver.split('.').collect();
-                if parts.len() == 3
-                    && !parts[0].is_empty()
-                    && !parts[1].is_empty()
-                    && !parts[2].is_empty()
-                {
-                    return Some(ver.to_string());
-                }
-            }
-        } else {
-            i += 1;
-        }
-    }
-    None
-}
-
-fn parse_version_num(ver: &str) -> i64 {
-    let parts: Vec<&str> = ver.split('.').collect();
-    if parts.len() == 3 {
-        let major: i64 = parts[0].parse().unwrap_or(0);
-        let minor: i64 = parts[1].parse().unwrap_or(0);
-        let patch: i64 = parts[2].parse().unwrap_or(0);
-        major * 10_000_000 + minor * 100_000 + patch * 1000
-    } else {
-        0
-    }
-}
-
+/// 构建入口。
 fn main() {
-    // Allow the custom cfg flag used for conditional FFI compilation.
     println!("cargo::rustc-check-cfg=cfg(cann_sys_ffi)");
 
     let (sdk_base, include_dir, lib_dir) = find_cann_sdk();
@@ -133,24 +72,9 @@ fn main() {
         println!("cargo:rustc-cfg=cann_sys_ffi");
     }
 
-    let (ver_str, ver_num) = extract_cann_version(&include_dir);
-    let out = PathBuf::from(env::var("OUT_DIR").unwrap());
-    fs::write(
-        out.join("version_info.rs"),
-        format!(
-            "pub const CANN_VERSION_STR: &str = \"{}\";\npub const CANN_VERSION_NUM: i64 = {};\n",
-            ver_str, ver_num
-        ),
-    )
-    .expect("failed to write version_info.rs");
-
     println!("cargo:rerun-if-env-changed=ASCEND_TOOLKIT_HOME");
     println!("cargo:rerun-if-env-changed=ASCEND_HOME_PATH");
     println!("cargo:rerun-if-env-changed=ASCEND_HOME");
-    println!(
-        "cargo:rerun-if-changed={}",
-        include_dir.join("version").join("cann_version.h").display()
-    );
     println!(
         "cargo:rerun-if-changed={}",
         include_dir.join("acl").join("acl_rt.h").display()

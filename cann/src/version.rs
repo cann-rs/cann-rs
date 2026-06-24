@@ -1,34 +1,44 @@
+//! CANN 版本查询。
+//!
+//! 通过 FFI 调用 `aclsysGetVersionStr` 和 `aclsysGetVersionNum` 获取 CANN 版本信息。
+//! 这些调用需要 NPU 驱动支持；无驱动时返回错误。
+
 use crate::error::Error;
 use std::ffi::CStr;
 
+/// CANN 版本查询接口。
 pub struct Version;
 
 impl Version {
-    /// Query CANN version string via FFI call to `aclsysGetVersionStr`.
-    /// Requires NPU driver; returns `Err` if unavailable.
+    /// 查询 CANN 版本字符串。
+    ///
+    /// 调用 `aclsysGetVersionStr("CANN", ...)` 获取版本号（如 `"9.0.0"`）。
+    /// 需要 NPU 驱动；驱动不可用时返回 `Err(Error)`。
     pub fn str() -> Result<String, Error> {
         let pkg_name = c"CANN".as_ptr();
         let mut buf = [0u8; cann_sys::ACL_PKG_VERSION_MAX_SIZE];
-        // SAFETY: pkgName is a valid NUL-terminated C string.
-        // versionStr buffer is 128 bytes, sufficient for any CANN version.
+        // SAFETY: pkgName 是有效的 NUL 结尾 C 字符串。
+        // versionStr 缓冲区长度为 128 字节，足够容纳任何 CANN 版本号。
         let ret = unsafe {
             cann_sys::aclsysGetVersionStr(pkg_name, buf.as_mut_ptr() as *mut std::ffi::c_char)
         };
         if ret != cann_sys::ACL_SUCCESS {
             return Err(Error::from(ret));
         }
-        // SAFETY: FFI call succeeded, buffer contains a valid NUL-terminated C string.
+        // SAFETY: FFI 调用成功，缓冲区包含有效的 NUL 结尾 C 字符串。
         let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const std::ffi::c_char) };
         Ok(c_str.to_str().unwrap_or_default().to_string())
     }
 
-    /// Query CANN version number via FFI call to `aclsysGetVersionNum`.
-    /// Requires NPU driver; returns `Err` if unavailable.
+    /// 查询 CANN 版本号（整数形式）。
+    ///
+    /// 调用 `aclsysGetVersionNum("CANN", ...)` 获取版本号（如 `90_000_000`）。
+    /// 需要 NPU 驱动；驱动不可用时返回 `Err(Error)`。
     pub fn num() -> Result<i32, Error> {
         let pkg_name = c"CANN".as_ptr();
         let mut num = 0i32;
-        // SAFETY: pkgName is a valid NUL-terminated C string.
-        // versionNum points to a valid i32 on the stack.
+        // SAFETY: pkgName 是有效的 NUL 结尾 C 字符串。
+        // versionNum 指向栈上有效的 i32 变量。
         let ret = unsafe { cann_sys::aclsysGetVersionNum(pkg_name, &mut num) };
         if ret != cann_sys::ACL_SUCCESS {
             return Err(Error::from(ret));

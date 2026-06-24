@@ -2,6 +2,12 @@
 name = "cann"
 version = "0.1.0"
 edition = "2024"
+description = "Safe Rust wrapper for Huawei Ascend CANN NPU SDK"
+repository = "https://github.com/cann-rs/cann-rs"
+documentation = "https://docs.rs/cann"
+license = "MIT OR Apache-2.0"
+keywords = ["ascend", "cann", "huawei", "npu"]
+categories = ["api-bindings", "hardware-support"]
 
 [dependencies]
-cann-sys = { path = "../cann-sys", features = ["ffi"] }
+cann-sys = { path = "../cann-sys", version = "0.1.0", features = ["ffi"] }

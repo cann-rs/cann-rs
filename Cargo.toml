@@ -1,3 +1,8 @@
 [workspace]
 members = ["cann-sys", "cann"]
 resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "git@ssh-git.huanguo.ltd:Rust/cann-rs.git"

@@ -3,6 +3,13 @@ name = "cann-sys"
 version = "0.1.0"
 edition = "2024"
 build = "build.rs"
+description = "Raw FFI bindings for Huawei Ascend CANN SDK (libascendcl)"
+repository = "https://github.com/cann-rs/cann-rs"
+documentation = "https://docs.rs/cann-sys"
+license = "MIT OR Apache-2.0"
+keywords = ["ascend", "cann", "huawei", "npu", "ffi"]
+categories = ["external-ffi-bindings", "hardware-support"]
+links = "ascendcl"
 
 [dependencies]
 

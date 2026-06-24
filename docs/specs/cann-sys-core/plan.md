@@ -4,10 +4,10 @@
 
 ```
 cann-sys/
-├── build.rs                        [NEW]  SDK 发现 + 版本提取 + 链接指令(FFI 可选)
+├── build.rs                        [NEW]  SDK 发现 + 链接指令(FFI 可选)
 ├── Cargo.toml                      [EDIT] 声明 build = "build.rs", [features] ffi = []
 ├── src/
-│   ├── lib.rs                      [EDIT] 模块入口 + include!(version_info.rs)
+│   ├── lib.rs                      [EDIT] 模块入口
 │   ├── acl_rt.rs                   [NEW]  常量/枚举 + #[cfg(cann_sys_ffi)] extern "C" 块
 │   ├── acl_base_rt.rs              [NEW]  aclError 类型 + 错误码常量
 
@@ -17,7 +17,7 @@ cann/
 │   ├── lib.rs                      [EDIT] mod error; mod version;
 │   ├── main.rs                     [NEW]  demo: 打印 CANN 版本
 │   ├── error.rs                    [NEW]  Error { code, message }
-│   └── version.rs                  [NEW]  Version { str(), num() } — FFI 优先
+│   └── version.rs                  [NEW]  Version { str(), num() } — 纯 FFI
 ```
 
 ## 2. build.rs SDK 发现策略
@@ -42,27 +42,6 @@ $ASCEND_TOOLKIT_HOME/
 4. ~/Ascend/cann            // 默认安装位置（symlink: cann → cann-X.Y.Z）
 5. /usr/local/Ascend        // 系统级安装
 ```
-
-### 版本号来源
-
-CANN SDK 在 `include/version/cann_version.h` 中定义版本宏：
-
-```c
-#define CANN_VERSION_STR "9.0.0"
-#define CANN_MAJOR 9
-#define CANN_MINOR 0
-#define CANN_PATCH 0
-#define CANN_VERSION_NUM ((9 * 10000000) + (0 * 100000) + (0 * 1000))
-```
-
-build.rs 解析该文件，生成 Rust 常量到 `$OUT_DIR/version_info.rs`：
-
-```rust
-pub const CANN_VERSION_STR: &str = "9.0.0";
-pub const CANN_VERSION_NUM: i64 = 90000000;
-```
-
-cann-sys 通过 `include!(concat!(env!("OUT_DIR"), "/version_info.rs"))` 引入。
 
 ### 链接指令
 
@@ -120,38 +99,24 @@ unsafe extern "C" {
 }
 ```
 
-## 4. cann 层安全封装：Version API（双重来源）
+## 4. cann 层安全封装：Version API（纯 FFI）
 
 ### 设计目标
 
-1. **优先通过 FFI** 调用 `aclsysGetVersionStr`/`aclsysGetVersionNum` 获取运行时版本
-2. **FFI 失败时**（如 driver 未安装、无硬件、函数返回错误）自动降级到编译期常量
-3. **零中断**：在任何环境下 `Version::str()` / `Version::num()` 均返回 `Ok`
+1. **仅通过 FFI** 调用 `aclsysGetVersionStr`/`aclsysGetVersionNum` 获取运行时版本
+2. **无编译期常量降级**：无 NPU 驱动时返回 `Err(Error)`
+3. 库代码不允许 panic
+
+### 背景
+
+最初采用"FFI 优先，编译期常量兜底"的双重来源方案，但交叉部署时发现编译期常量与运行时 SDK 版本不一致，导致误判。因此废弃编译期常量，**仅依赖 FFI 运行时查询**。
 
 ### 实现
 
 ```rust
 impl Version {
     pub fn str() -> Result<String, Error> {
-        // 1. FFI 优先
-        match Self::try_ffi_str() {
-            Ok(v) => return Ok(v),
-            Err(_) => { /* 降级到编译期常量 */ }
-        }
-        // 2. 编译期常量（从 cann_version.h 提取）
-        Ok(cann_sys::CANN_VERSION_STR.to_string())
-    }
-
-    pub fn num() -> Result<i64, Error> {
-        match Self::try_ffi_num() {
-            Ok(n) => return Ok(n as i64),
-            Err(_) => { /* 降级 */ }
-        }
-        Ok(cann_sys::CANN_VERSION_NUM)
-    }
-
-    fn try_ffi_str() -> Result<String, Error> {
-        let pkg_name = b"CANN\0".as_ptr() as *const c_char;
+        let pkg_name = c"CANN".as_ptr();
         let mut buf = [0u8; cann_sys::ACL_PKG_VERSION_MAX_SIZE];
         // SAFETY: pkgName 是有效 C 字符串，缓冲区 ≥128 字节
         let ret = unsafe {
@@ -165,9 +130,10 @@ impl Version {
         Ok(c_str.to_str().unwrap_or_default().to_string())
     }
 
-    fn try_ffi_num() -> Result<i32, Error> {
-        let pkg_name = b"CANN\0".as_ptr() as *const c_char;
+    pub fn num() -> Result<i32, Error> {
+        let pkg_name = c"CANN".as_ptr();
         let mut num: i32 = 0;
+        // SAFETY: pkgName 是有效 C 字符串，versionNum 指向栈上 i32
         let ret = unsafe { cann_sys::aclsysGetVersionNum(pkg_name, &mut num) };
         if ret != cann_sys::ACL_SUCCESS {
             return Err(Error::from(ret));
@@ -177,12 +143,12 @@ impl Version {
 }
 ```
 
-### 降级条件
+### 返回语义
 
-| 场景 | FFI 是否成功 | 最终来源 |
-|------|-------------|----------|
-| 有 CANN SDK + NPU 驱动 | ✅ `ACL_SUCCESS` | FFI 运行时值 |
-| 有 CANN SDK，无驱动 | ❌ `ACL_ERROR_INVALID_FILE` | 编译期常量 |
+| 场景 | FFI 结果 | `Version::str()` / `Version::num()` |
+|------|----------|-------------------------------------|
+| 有 CANN SDK + NPU 驱动 | ✅ `ACL_SUCCESS` | `Ok(运行时版本)` |
+| 有 CANN SDK，无驱动 | ❌ `ACL_ERROR_INVALID_FILE` | `Err(Error)`，message 含中文说明 |
 | 无 CANN SDK | 构建失败 — `build.rs exit(1)` | — |
 
 ## 5. Error 类型
@@ -217,7 +183,7 @@ impl From<aclError> for Error {
 ### SDK 环境检测
 
 - 无 SDK：build.rs 失败，不产生任何测试二进制
-- 有 SDK 无驱动：FFI 返回错误，降级到编译期常量，测试验证常量值
+- 有 SDK 无驱动：FFI 返回 `ACL_ERROR_INVALID_FILE`（100003），测试标记为 `#[ignore = "requires NPU driver"]`
 - 有 SDK 有驱动：FFI 成功，测试验证运行时值
 
 ### 运行测试
@@ -244,6 +210,6 @@ CANN_VERSION_NUM = MAJOR × 10 000 000 + MINOR × 100 000 + PATCH × 1000
 | 风险 | 影响 | 缓解 |
 |------|------|------|
 | 环境变量未设置 | 构建失败 | build.rs 遍历多个候选路径，最后打印清晰指引 |
-| `aclsysGetVersionStr` 无驱动时失败 | FFI 返回 `ACL_ERROR_INVALID_FILE` | 自动降级到编译期常量 |
+| `aclsysGetVersionStr` 无驱动时失败 | FFI 返回 `ACL_ERROR_INVALID_FILE` | 调用者通过 `Error` 类型获知失败原因 |
 | 无 NPU 驱动导致库加载失败 | 二进制运行错误 | rpath 添加 devlib 路径+`--allow-shlib-undefined` |
 | 缓冲区大小不足 | 缓冲区溢出 | 使用 `ACL_PKG_VERSION_MAX_SIZE`（128）确保安全 |
