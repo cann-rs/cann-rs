@@ -5,7 +5,7 @@
 
 use crate::error::Error;
 #[cfg(feature = "ffi")]
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 
 /// CANN 版本查询接口。
 pub struct Version;
@@ -19,19 +19,12 @@ impl Version {
     #[cfg(cann_sdk_has_aclsys_get_version_str)]
     pub fn str() -> Result<String, Error> {
         crate::ensure_acl_init()?;
-        let pkg_name = c"CANN".as_ptr();
-        let mut buf = [0u8; cann_sys::ACL_PKG_VERSION_MAX_SIZE];
-        // SAFETY: pkgName 是有效的 NUL 结尾 C 字符串。
-        // versionStr 缓冲区长度为 128 字节，足够容纳任何 CANN 版本号。
-        let ret = unsafe {
-            cann_sys::aclsysGetVersionStr(pkg_name, buf.as_mut_ptr() as *mut std::ffi::c_char)
-        };
-        if ret != cann_sys::ACL_SUCCESS {
-            return Err(Error::from(ret));
+        if let Some(ver) = aclsys_version_str() {
+            return Ok(ver);
         }
-        // SAFETY: FFI 调用成功，缓冲区包含有效的 NUL 结尾 C 字符串。
-        let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const std::ffi::c_char) };
-        Ok(c_str.to_str().unwrap_or_default().to_string())
+        // 回退：runtime 组件版本（跨 SDK 语义稳定）
+        let (major, minor, patch) = rt_version()?;
+        Ok(format!("{major}.{minor}.{patch}"))
     }
 
     /// 版本查询回退路径（CANN 7.x：无 aclsys* 符号，用 `aclrtGetVersion`）。
@@ -49,15 +42,12 @@ impl Version {
     #[cfg(cann_sdk_has_aclsys_get_version_str)]
     pub fn num() -> Result<i32, Error> {
         crate::ensure_acl_init()?;
-        let pkg_name = c"CANN".as_ptr();
-        let mut num = 0i32;
-        // SAFETY: pkgName 是有效的 NUL 结尾 C 字符串。
-        // versionNum 指向栈上有效的 i32 变量。
-        let ret = unsafe { cann_sys::aclsysGetVersionNum(pkg_name, &mut num) };
-        if ret != cann_sys::ACL_SUCCESS {
-            return Err(Error::from(ret));
+        if let Some(n) = aclsys_version_num() {
+            return Ok(n);
         }
-        Ok(num)
+        // 回退：由 runtime 组件版本推算
+        let (major, minor, patch) = rt_version()?;
+        Ok(major * 10_000_000 + minor * 100_000 + patch * 1000)
     }
 
     /// 版本号回退路径（CANN 7.x）：`major*10_000_000 + minor*100_000 + patch*1000`。
@@ -69,10 +59,50 @@ impl Version {
     }
 }
 
-/// 进程级单次 `aclInit`：CANN 的初始化是进程全局且不可重复（7.x 上
-/// `aclInit` 二次调用返回 `ACL_ERROR_REPEAT_INITIALIZE`），版本探测共用一次。
+/// `aclsysGetVersionStr` 候选包名遍历：不同 SDK 对包名支持不同
+/// （"CANN" / "CANNToolkit" 等），逐个尝试直到成功。
+#[cfg(all(feature = "ffi", cann_sdk_has_aclsys_get_version_str))]
+fn aclsys_version_str() -> Option<String> {
+    const PKG_CANDIDATES: [&str; 4] = ["CANN", "CANNToolkit", "acl", "ascendcl"];
+    for pkg in PKG_CANDIDATES {
+        let Ok(pkg_name) = CString::new(pkg) else {
+            continue;
+        };
+        let mut buf = [0u8; cann_sys::ACL_PKG_VERSION_MAX_SIZE];
+        // SAFETY: pkgName 是有效的 NUL 结尾 C 字符串；缓冲区 128 字节足够。
+        let ret = unsafe {
+            cann_sys::aclsysGetVersionStr(
+                pkg_name.as_ptr(),
+                buf.as_mut_ptr() as *mut std::ffi::c_char,
+            )
+        };
+        if ret == cann_sys::ACL_SUCCESS {
+            // SAFETY: 调用成功时缓冲区包含 NUL 结尾 C 字符串。
+            let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const std::ffi::c_char) };
+            return Some(c_str.to_str().unwrap_or_default().to_string());
+        }
+    }
+    None
+}
 
-#[cfg(all(feature = "ffi", not(cann_sdk_has_aclsys_get_version_str)))]
+#[cfg(all(feature = "ffi", cann_sdk_has_aclsys_get_version_str))]
+fn aclsys_version_num() -> Option<i32> {
+    const PKG_CANDIDATES: [&str; 4] = ["CANN", "CANNToolkit", "acl", "ascendcl"];
+    for pkg in PKG_CANDIDATES {
+        let Ok(pkg_name) = CString::new(pkg) else {
+            continue;
+        };
+        let mut num = 0i32;
+        // SAFETY: pkgName 是有效的 NUL 结尾 C 字符串；num 指向栈上 i32。
+        let ret = unsafe { cann_sys::aclsysGetVersionNum(pkg_name.as_ptr(), &mut num) };
+        if ret == cann_sys::ACL_SUCCESS {
+            return Some(num);
+        }
+    }
+    None
+}
+
+#[cfg(feature = "ffi")]
 fn rt_version() -> Result<(i32, i32, i32), Error> {
     let mut major = 0i32;
     let mut minor = 0i32;
