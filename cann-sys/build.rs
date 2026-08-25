@@ -124,6 +124,63 @@ fn cfg_name(sym: &str) -> String {
     format!("cann_sys_has_{sym}")
 }
 
+/// 判断某个 `.so` 的 ELF 字符串表（.dynstr 纯文本）中是否包含目标符号名。
+///
+/// 零依赖实现（不依赖 `nm`），通过字节窗口匹配符号名字符串。
+fn lib_contains_symbol(lib_dir: &Path, lib_file: &str, sym: &str) -> bool {
+    let Ok(bytes) = fs::read(lib_dir.join(lib_file)) else {
+        return false;
+    };
+    let needle = sym.as_bytes();
+    bytes.windows(needle.len()).any(|w| w == needle)
+}
+
+/// 确保 `libascendcl` 基础库之外的多余符号有库可链。
+///
+/// 不同 SDK 版本/架构会把同一符号放在不同库（如 `aclsysGetVersionStr` 在部分版本位于
+/// `libacl_rt.so`/`libascend_common.so`）。流程：基础库已含 → 免链；否则按候选优先级
+/// 找到第一个含该符号的库并链接，全无则兜底扫描 lib64 目录。
+fn link_symbol_provenance(lib_dir: &Path, sym: &str) {
+    // 基础库已含目标符号：无需额外链接
+    if lib_contains_symbol(lib_dir, "libascendcl.so", sym) {
+        return;
+    }
+    // 候选库（按出现频率排序），找第一个导出的
+    let candidates = ["libacl_rt.so", "libacl_rt_impl.so", "libascend_common.so"];
+    for lib in candidates {
+        if lib_contains_symbol(lib_dir, lib, sym) {
+            let link_name = lib
+                .strip_prefix("lib")
+                .unwrap_or(lib)
+                .strip_suffix(".so")
+                .unwrap_or(lib);
+            println!("cargo:rustc-link-lib={link_name}");
+            eprintln!("cann-sys: 符号 {sym} 未在 libascendcl.so 中，已追加链接 {lib}");
+            return;
+        }
+    }
+    // 兜底：扫描全部 .so。找到任意一个导出的即链接（避免链接器缺符号）。
+    if let Ok(entries) = fs::read_dir(lib_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with("lib")
+                && name.ends_with(".so")
+                && lib_contains_symbol(lib_dir, &name, sym)
+            {
+                let link_name = name
+                    .strip_prefix("lib")
+                    .unwrap_or(&name)
+                    .strip_suffix(".so")
+                    .unwrap_or(&name);
+                println!("cargo:rustc-link-lib={link_name}");
+                eprintln!("cann-sys: 符号 {sym} 未在基础库中，已在 {name} 找到并追加链接");
+                return;
+            }
+        }
+    }
+    eprintln!("cann-sys: 警告: 未在任何库中找到符号 {sym}，链接可能失败（请检查 lib64 目录）");
+}
+
 /// 构建入口。
 fn main() {
     println!("cargo::rustc-check-cfg=cfg(cann_sys_ffi)");
@@ -170,6 +227,10 @@ fn main() {
                     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", devlib.display());
                 }
                 println!("cargo:rustc-link-arg=-Wl,--allow-shlib-undefined");
+                // 跨 SDK 版本/架构的符号库归属差异：确保被引用的符号有库可链
+                // （如 aclsysGetVersionStr 在部分版本位于 libacl_rt.so，而非 libascendcl.so）
+                link_symbol_provenance(&lib_dir, "aclsysGetVersionStr");
+                link_symbol_provenance(&lib_dir, "aclsysGetVersionNum");
             } else {
                 eprintln!("cann-sys: ffi 特性未启用，仅类型/常量编译（无链接）");
             }
