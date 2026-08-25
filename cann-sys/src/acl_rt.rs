@@ -36,6 +36,25 @@ pub enum aclCANNPackageName {
     ACL_PKG_NAME_DRIVER,
 }
 
+/// CANN 包版本结构（对应 `aclCANNPackageVersion`，acl_rt.h）。
+#[cfg(cann_sys_ffi)]
+#[repr(C)]
+#[allow(non_camel_case_types, non_snake_case)]
+pub struct aclCANNPackageVersion {
+    /// 版本字符串（如 "8.5.0"）。
+    pub version: [c_char; ACL_PKG_VERSION_MAX_SIZE],
+    /// 主版本。
+    pub majorVersion: [c_char; ACL_PKG_VERSION_PARTS_MAX_SIZE],
+    /// 次版本。
+    pub minorVersion: [c_char; ACL_PKG_VERSION_PARTS_MAX_SIZE],
+    /// 发布版本。
+    pub releaseVersion: [c_char; ACL_PKG_VERSION_PARTS_MAX_SIZE],
+    /// 补丁版本。
+    pub patchVersion: [c_char; ACL_PKG_VERSION_PARTS_MAX_SIZE],
+    /// 保留。
+    pub reserved: [c_char; ACL_PKG_VERSION_MAX_SIZE],
+}
+
 // `libascendcl` FFI 函数声明，仅在启用 `ffi` 特性时编译。
 #[cfg(cann_sys_ffi)]
 unsafe extern "C" {
@@ -63,6 +82,16 @@ unsafe extern "C" {
     // - `versionNum` 必须指向有效的 `i32`。
     #[cfg(cann_sys_has_aclsysGetVersionStr)]
     pub fn aclsysGetVersionNum(pkgName: *const c_char, versionNum: *mut i32) -> aclError;
+
+    // 旧版包版本查询（已废弃但 pyacl 沿用；以枚举取包名）。
+    // # 安全性
+    // - `name` 必须为合法包名枚举值。
+    // - `version` 必须指向有效的 `aclCANNPackageVersion` 结构。
+    #[cfg(cann_sys_has_aclsysGetVersionStr)]
+    pub fn aclsysGetCANNVersion(
+        name: aclCANNPackageName,
+        version: *mut aclCANNPackageVersion,
+    ) -> aclError;
 
     // 查询 ACL 运行时组件版本（需先调用 `aclInit`）。
     // # 安全性

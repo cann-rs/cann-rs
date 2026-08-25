@@ -22,7 +22,11 @@ impl Version {
         if let Some(ver) = aclsys_version_str() {
             return Ok(ver);
         }
-        // 回退：runtime 组件版本（跨 SDK 语义稳定）
+        // ② 旧 API（枚举包名；pyacl 同款，server 有效）
+        if let Ok(ver) = enum_version_str() {
+            return Ok(ver);
+        }
+        // ③ 回退：runtime 组件版本（跨 SDK 语义稳定）
         let (major, minor, patch) = rt_version()?;
         Ok(format!("{major}.{minor}.{patch}"))
     }
@@ -45,7 +49,20 @@ impl Version {
         if let Some(n) = aclsys_version_num() {
             return Ok(n);
         }
-        // 回退：由 runtime 组件版本推算
+        // ② 旧 API（枚举包名）
+        if let Ok(s) = enum_version_str() {
+            let parts: Vec<&str> = s.split('.').collect();
+            if parts.len() >= 3
+                && let (Ok(maj), Ok(min), Ok(pat)) = (
+                    parts[0].parse::<i32>(),
+                    parts[1].parse::<i32>(),
+                    parts[2].parse::<i32>(),
+                )
+            {
+                return Ok(maj * 10_000_000 + min * 100_000 + pat * 1000);
+            }
+        }
+        // ③ 由 runtime 组件版本推算
         let (major, minor, patch) = rt_version()?;
         Ok(major * 10_000_000 + minor * 100_000 + patch * 1000)
     }
@@ -100,6 +117,22 @@ fn aclsys_version_num() -> Option<i32> {
         }
     }
     None
+}
+
+/// 旧 API `aclsysGetCANNVersion`（枚举包名，pyacl 同款调用路径）。
+#[cfg(all(feature = "ffi", cann_sdk_has_aclsys_get_version_str))]
+fn enum_version_str() -> Result<String, Error> {
+    let mut ver: cann_sys::aclCANNPackageVersion = unsafe { std::mem::zeroed() };
+    // SAFETY: `ver` 为有效结构指针；`ACL_PKG_NAME_CANN` 为合法枚举。
+    let ret = unsafe {
+        cann_sys::aclsysGetCANNVersion(cann_sys::aclCANNPackageName::ACL_PKG_NAME_CANN, &mut ver)
+    };
+    if ret != cann_sys::ACL_SUCCESS {
+        return Err(Error::from(ret));
+    }
+    // SAFETY: 结构以 NUL 结尾字符数组承载版本字段。
+    let c_str = unsafe { CStr::from_ptr(ver.version.as_ptr()) };
+    Ok(c_str.to_str().unwrap_or_default().to_string())
 }
 
 #[cfg(feature = "ffi")]
