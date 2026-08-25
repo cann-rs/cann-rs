@@ -36,7 +36,9 @@ CANN SDK (8.x/9.x) → cann-sys (裸 FFI) → cann (安全 API)   ← cann-rs �
 | ACL 错误码与 `is_oom/is_recoverable` | cann-rs（SDK 语义） | reinfer 映射到引擎 `LaunchError`（映射表见 002/plan.md） |
 | 设备属性（SoC、显存、L2…） | cann-rs（`DeviceProps`） | reinfer 用于能力分级与 TuneDb 键 |
 | aclnn 算子封装（Matmul/Softmax/RMSNorm/TopK…） | cann-rs（cann-ops 风格 crate） | reinfer 只做 KernelProvider Vendor 档选择 + 自动调优 |
-| 图捕获（`aclrtGraph*`） | cann-rs（绑定） | reinfer 决定哪些算子进图、桶化、内存复用 |
+| 图捕获（GE 图引擎 `aclgrph*`：aclgrphParseONNX/BuildModel/SaveModel + Session） | cann-rs（绑定） | reinfer 决定哪些算子进图、桶化、内存复用 |
+
+> 注（2026-08-25）：CANN 8.5.0 已无 `aclrtGraph*` 符号，图体系为 GE 图引擎（`api/ascendgraphapi`：aclgrph* + Session）。旧表述的 `aclrtGraph*` 仅为 8.x 早期动态图 API；按 8.5 锚点统一为 aclgrph*。
 | HCCL 原语（初始化、集合通信、收发） | cann-rs（cann-sys + cann） | reinfer：算法、拓扑、回退（与 CUDA 侧 `crates/comm` 共享设计） |
 | AscendC 内核**编译流水线**（bisheng/AOC、缓存、锁） | **reinfer `crates/jit`** | 对齐 FlashInfer JitSpec；内核源码资产属于引擎 | 
 | AscendC 自定义算子**装载/执行 API**（aclnnCustomOp…） | cann-rs（绑定） | reinfer 驱动 编译 → 装载 → 执行 |

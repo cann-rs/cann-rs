@@ -24,7 +24,7 @@ cann/cann-sys 0.1.x 目前只提供版本探测（`aclsysGetVersionStr/Num`）�
 ## Acceptance Criteria
 
 - [ ] 决策已落实：`DeviceBuffer` 实现 `Send`（附 SAFETY 注释：仅限归属 device 使用）；`Error` 分类采用**码段白名单**（未知码 fail-closed → `is_oom()==false, is_recoverable()==false`）；`cann` 的 `[features] ffi` **默认关闭**（转发 `cann-sys/ffi`）
-- [ ] `cann-sys`：`aclrtGetDeviceNum`(⚠️verify)、`aclrtSetDevice`、`aclrtCreateStream/DestroyStream`、`aclrtCreateEvent/RecordEvent/SynchronizeEvent/DestroyEvent`、`aclrtMalloc/Free/MallocHost/FreeHost/Memcpy`、`aclrtGetSocName`(⚠️verify) 绑定完成；`ACL_MEM_MALLOC_*`、`ACL_MEMCPY_*`、`ACL_ERROR_RT_*` 常量带出处注释
+- [ ] `cann-sys`：`aclrtGetDeviceCount`（✅ 已核实，见 `docs/cann-850-catalog.md` §2）、`aclrtSetDevice`、`aclrtCreateStream/DestroyStream`、`aclrtCreateEvent/RecordEvent/SynchronizeEvent/DestroyEvent`、`aclrtMalloc/Free/MallocHost/FreeHost/Memcpy`、`aclrtGetSocName`（✅ 已核实：无参返回 `const char *`）绑定完成；`ACL_MEM_MALLOC_*`、`ACL_MEMCPY_*`、`ACL_ERROR_RT_*` 常量带出处注释
 - [ ] `cann`：上述类型全部可安全构造、使用、析构；文档注明线程亲和性（ACL per-thread device 绑定）
 - [ ] build.rs：非 `ffi` 构建时不再 `exit(1)`（改为探测告警），存在性探测生成 `cann_sys_has_*` cfg
 - [ ] CI 三档：无 SDK（lint+单测）/ 有 SDK（编译）/ NPU（smoke）
@@ -41,3 +41,9 @@ cann/cann-sys 0.1.x 目前只提供版本探测（`aclsysGetVersionStr/Num`）�
 - 8.x/9.x 符号漂移：可疑符号经 build.rs 存在性探测 + `#[cfg(cann_sys_has_*)]` 门控；符号核实清单见 plan.md §verify-list
 - 许可 MIT OR Apache-2.0；SDK 探测链沿用既有 build.rs（`ASCEND_TOOLKIT_HOME` → … → `/usr/local/Ascend`）
 - 不修改 `cann-sys` 现有 API（保持向后兼容 0.1.x）
+
+## Changelog
+
+- 2026-08-25：verify-list 按 CANN 8.5.0 官方文档核定（依据 `docs/cann-850-catalog.md` §2）：
+  `aclrtGetDeviceNum` → `aclrtGetDeviceCount`；`aclrtGetSocName` → 无参返回 `const char *`；
+  `aclrtMalloc` 第三参数为 `aclrtMemMallocPolicy` 枚举（非裸 u32）。其余符号与 plan 契约一致。

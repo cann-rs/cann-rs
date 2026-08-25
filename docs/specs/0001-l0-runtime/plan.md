@@ -5,7 +5,7 @@
 ## Architecture Decision
 
 1. **保持手写 extern**：~16 个符号固定可控、零构建依赖、逐条 `# SAFETY` 可审计——不引入 bindgen。
-2. **存在性探测 cfg**：build.rs `grep include/acl/*.h`，对风险符号（如 `aclrtGetDeviceNum`）生成 `cann_sys_has_<sym>`；cann 层按 cfg 提供一致接口或标记不可用。
+2. **存在性探测 cfg**：build.rs `grep include/acl/*.h`，对风险符号（跨版本可能漂移者）生成 `cann_sys_has_<sym>`；cann 层按 cfg 提供一致接口或标记不可用。8.5 锚点符号已核实，见 verify-list。
 3. **模块拆分（cann-sys）**：沿用 `acl_rt.rs`（函数声明），新增 `acl_memory.rs`（内存原语 + 常量）、`acl_error_code.rs`（RT 错误码常量，全部带出处注释）、`acl_device.rs`（设备 + soc）。
 4. **cann-sys 向后兼容**：不改现有声明；新符号同样挂在 `#[cfg(cann_sys_ffi)]` 内。
 5. **build.rs 降级（P0）**：`CARGO_FEATURE_FFI` 未开启时跳过 SDK 硬检测（不再 `exit(1)`），只打印探测结果；`ffi` 开启时维持现有检测与链接逻辑。
@@ -25,22 +25,22 @@
 
 ```rust
 // ============ cann-sys（ffi 门禁内，签名以 AACL 头文件为准）============
-pub fn aclrtGetDeviceNum(num: *mut u32) -> aclError;        // ⚠️ verify-symbol: GetDeviceNum / DeviceCount
-pub fn aclrtSetDevice(deviceId: i32) -> aclError;
-pub fn aclrtResetDevice(deviceId: i32) -> aclError;          // ⚠️ verify-symbol
-pub fn aclrtCreateStream(stream: *mut *mut c_void) -> aclError;
-pub fn aclrtDestroyStream(stream: *mut c_void) -> aclError;
-pub fn aclrtCreateEvent(evt: *mut *mut c_void) -> aclError;
-pub fn aclrtRecordEvent(evt: *mut c_void, stream: *mut c_void) -> aclError;
-pub fn aclrtSynchronizeEvent(evt: *mut c_void) -> aclError;
-pub fn aclrtDestroyEvent(evt: *mut c_void) -> aclError;
-pub fn aclrtMalloc(ptr: *mut *mut c_void, size: usize, flags: u32) -> aclError;
+pub fn aclrtGetDeviceCount(count: *mut u32) -> aclError;    // ✅ 官方: aclError aclrtGetDeviceCount(uint32_t *count) (aclcppdevg_03_0045)
+pub fn aclrtSetDevice(deviceId: i32) -> aclError;            // ✅ (aclcppdevg_03_0039)
+pub fn aclrtResetDevice(deviceId: i32) -> aclError;          // ✅ (aclcppdevg_03_0040)
+pub fn aclrtCreateStream(stream: *mut *mut c_void) -> aclError;      // ✅ (aclcppdevg_03_0066)
+pub fn aclrtDestroyStream(stream: *mut c_void) -> aclError; // ✅
+pub fn aclrtCreateEvent(evt: *mut *mut c_void) -> aclError; // ✅ (aclcppdevg_03_0079)
+pub fn aclrtRecordEvent(evt: *mut c_void, stream: *mut c_void) -> aclError; // ✅ (aclcppdevg_03_0083; stream=NULL 表示默认流)
+pub fn aclrtSynchronizeEvent(evt: *mut c_void) -> aclError; // ✅ (aclcppdevg_03_0088)
+pub fn aclrtDestroyEvent(evt: *mut c_void) -> aclError; // ✅
+pub fn aclrtMalloc(ptr: *mut *mut c_void, size: usize, policy: aclrtMemMallocPolicy) -> aclError; // ✅ 第三参数为枚举 (aclcppdevg_03_0095)
 pub fn aclrtFree(ptr: *mut c_void) -> aclError;
 pub fn aclrtMallocHost(ptr: *mut *mut c_void, size: usize) -> aclError;
 pub fn aclrtFreeHost(ptr: *mut c_void) -> aclError;
-pub fn aclrtMemcpy(dst: *mut c_void, dst_max: usize, src: *const c_void, count: usize, kind: aclrtMemcpyKind) -> aclError; // ⚠️ verify-signature
-pub fn aclrtGetSocName(name: *mut c_char, len: usize) -> aclError; // ⚠️ verify-signature
-pub const ACL_MEM_MALLOC_HUGE_FIRST: u32;   // ... HUGE_ONLY / NORMAL_ONLY / NORMAL_FIRST
+pub fn aclrtMemcpy(dst: *mut c_void, dst_max: usize, src: *const c_void, count: usize, kind: aclrtMemcpyKind) -> aclError; // ✅ 与官方完全一致 (aclcppdevg_03_0105)
+pub fn aclrtGetSocName() -> *const c_char;                  // ✅ 官方: const char *aclrtGetSocName(void) (aclcppdevg_03_0048)
+pub const ACL_MEM_MALLOC_HUGE_FIRST: u32;   // ... HUGE_ONLY / NORMAL_ONLY / NORMAL_FIRST (aclrtMemMallocPolicy)
 pub const ACL_MEMCPY_HOST_TO_DEVICE / DEVICE_TO_HOST / DEVICE_TO_DEVICE / HOST_TO_HOST: aclrtMemcpyKind;
 
 // ============ cann（安全层）============
@@ -78,17 +78,21 @@ impl Error {
 
 | 风险 | 缓解 |
 |---|---|
-| 符号在 8.x/9.x 改名（`aclrtGetDeviceNum` 等 3 处 ⚠️） | 存在性探测 cfg + verify-list 真机核对后再删 ⚠️ |
+| 符号在 8.x/9.x 改名 | 已按 CANN 8.5.0 官方文档核定（详见 verify-list 附录）；仍保留 build.rs 存在性探测兜底 |
 | RT 错误码数值漂移 | `acl_error_code.h` 逐条核对并写出处注释；白名单机制 fail-closed |
 | 无 SDK 时 CI 断裂 | build.rs 降级（P0 任务）先落地再补绑定 |
 | 线程亲和性（per-thread set_device）遭误用 | 文档 + 可选 debug_assert（Task 8 可选） |
 | ffi 默认关导致链接类错误后置 | 特征矩阵 CI：`--features ffi` 开启的 job 在有 SDK 环境编译 + smoke |
 
-## Verify-list（实现时逐项核实 TODO(verify-symbol/signature)）
+## Verify-list（2026-08-25 已按 CANN 8.5.0 官方文档核定，依据 `docs/cann-850-catalog.md` §2）
 
-- [ ] `aclrtGetDeviceNum` vs `aclrtGetDeviceCount`（acl_rt.h）
-- [ ] `aclrtResetDevice` / `aclrtSynchronizeDevice` 存在性
-- [ ] `aclrtMemcpy` 形参顺序（dst, dstMax, src, count, kind）
-- [ ] `aclrtGetSocName` 签名
-- [ ] `ACL_ERROR_RT_*` 数值段（acl_error_code.h）
-- [ ] `ACL_MEM_MALLOC_HUGE_FIRST/…` 数值顺序（acl_rt.h）
+- [x] ~~`aclrtGetDeviceNum` vs `aclrtGetDeviceCount`~~ → ✅ 官方为 **`aclrtGetDeviceCount(uint32_t *count)`**（aclcppdevg_03_0045），已改契约
+- [x] ~~`aclrtResetDevice` / `aclrtSynchronizeDevice` 存在性~~ → ✅ 存在（aclcppdevg_03_0040），另确认真机同步用 `aclrtSynchronizeDevice`（aclcppdevg_03_0056）
+- [x] ~~`aclrtMemcpy` 形参顺序（dst, dstMax, src, count, kind）~~ → ✅ 与官方完全一致（aclcppdevg_03_0105）
+- [x] ~~`aclrtGetSocName` 签名~~ → ✅ 官方 8.5 为 **`const char *aclrtGetSocName(void)`**（aclcppdevg_03_0048），无参返回指针，已改契约
+- [x] ~~`aclrtMalloc` 第三参数类型~~ → ✅ **`aclrtMemMallocPolicy` 枚举**（aclcppdevg_03_0095），已改契约
+- [ ] `ACL_ERROR_RT_*` 数值段（acl_error_code.h）——官方文档无码表页，待头文件实机核对
+- [ ] `ACL_MEM_MALLOC_HUGE_FIRST/…` 数值顺序（acl_rt.h）——待头文件核对
+
+> 契约锚点侧同步要求（R3）：`reinfer/specs/002-ascend-backend/plan.md` 的 L0 契约表需同改：
+> `aclrtGetDeviceNum`/带缓冲区版 `aclrtGetSocName` 两处签名。此为跨仓库同步事项。

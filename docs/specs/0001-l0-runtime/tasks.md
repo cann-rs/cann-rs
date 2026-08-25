@@ -16,7 +16,7 @@
 
 ## Task 3: 设备与 SOC（acl_rt.rs + acl_device.rs）
 
-- 绑定 `aclrtGetDeviceNum`(⚠️) / `aclrtSetDevice` / `aclrtResetDevice`(⚠️) / `aclrtGetSocName`(⚠️)
+- 绑定 `aclrtGetDeviceCount`(✅ 官方核定, aclcppdevg_03_0045) / `aclrtSetDevice` / `aclrtResetDevice`(✅) / `aclrtGetSocName`(✅ 无参返回 `const char *`, aclcppdevg_03_0048)
 - 验证：ffi 编译通过；声明带 `# SAFETY`；cfg 探测生效（改名时 fallback 路径可用）
 
 ## Task 4: 内存原语（acl_memory.rs）
