@@ -4,7 +4,7 @@
 //! 这些调用需要 NPU 驱动支持；无驱动时返回错误。
 
 use crate::error::Error;
-#[cfg(feature = "ffi")]
+#[cfg(all(feature = "ffi", cann_sdk_has_aclsys_get_version_str))]
 use std::ffi::{CStr, CString};
 
 /// CANN 版本查询接口。
