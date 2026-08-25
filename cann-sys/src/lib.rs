@@ -8,22 +8,22 @@
 
 /// ACL 基础运行时类型与错误码。
 pub mod acl_base_rt;
+/// ACL 数据类型/格式枚举。
+pub mod acl_datatype;
 /// ACL 设备与 SOC 管理。
 pub mod acl_device;
 /// ACL 运行时错误码常量。
 pub mod acl_error_code;
+/// GE 图引擎（aclgrph*，C++ shim 桥接）。
+pub mod acl_grph;
 /// ACL 内存管理原语。
 pub mod acl_memory;
 /// ACL 张量/标量基础类型（acl_meta.h）。
 pub mod acl_meta;
-/// ACL 数据类型/格式枚举。
-pub mod acl_datatype;
-/// aclnn 算子（首批：Matmul/Softmax/RMSNorm）。
-pub mod aclnn_ops;
-/// GE 图引擎（aclgrph*，C++ shim 桥接）。
-pub mod acl_grph;
 /// ACL 运行时 FFI 函数声明与版本查询常量。
 pub mod acl_rt;
+/// aclnn 算子（首批：Matmul/Softmax/RMSNorm）。
+pub mod aclnn_ops;
 
 pub use acl_base_rt::*;
 pub use acl_error_code::*;

@@ -7,6 +7,7 @@
 //! - 符号存在性探测：生成 `cann_sys_has_*` cfg 供跨版本门控
 
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::{env, fs};
 
 /// 需要探测存在性的 L0 函数符号（跨版本可能漂移）。
@@ -40,6 +41,26 @@ const SYMBOLS: &[&str] = &[
     "aclrtSynchronizeEvent",
     "aclrtStreamWaitEvent",
     "aclrtEventElapsedTime",
+    // L1: aclTensor / aclnn 算子 / GE 图引擎
+    "aclCreateTensor",
+    "aclCreateScalar",
+    "aclCreateTensorList",
+    "aclDestroyTensor",
+    "aclGetViewShape",
+    "aclGetStorageShape",
+    "aclGetViewStrides",
+    "aclGetViewOffset",
+    "aclGetFormat",
+    "aclGetDataType",
+    "aclGetTensorListSize",
+    "aclnnMatmulGetWorkspaceSize",
+    "aclnnMatmul",
+    "aclnnSoftmaxGetWorkspaceSize",
+    "aclnnSoftmax",
+    "aclnnRmsNormGetWorkspaceSize",
+    "aclnnRmsNorm",
+    "aclgrphParseONNX",
+    "aclgrphParseONNXFromMem",
 ];
 
 /// 读取并规范化环境变量路径（去空字符串与首尾空白）。
@@ -189,15 +210,97 @@ fn cfg_name(sym: &str) -> String {
     format!("cann_sys_has_{sym}")
 }
 
-/// 判断某个 `.so` 的 ELF 字符串表（.dynstr 纯文本）中是否包含目标符号名。
+/// 判断某个 `.so` 是否**导出**目标符号（ELF64 小端 `.dynsym` 解析）。
 ///
-/// 零依赖实现（不依赖 `nm`），通过字节窗口匹配符号名字符串。
+/// 零依赖实现（不依赖 `nm`）。注意：不能用"字符串包含"判断——库的内部字符串/
+/// 依赖引用也包含符号名，会误报；必须解析动态符号表确认导出。
 fn lib_contains_symbol(lib_dir: &Path, lib_file: &str, sym: &str) -> bool {
     let Ok(bytes) = fs::read(lib_dir.join(lib_file)) else {
         return false;
     };
-    let needle = sym.as_bytes();
-    bytes.windows(needle.len()).any(|w| w == needle)
+    if bytes.len() < 64 || &bytes[0..4] != b"\x7fELF" {
+        return false;
+    }
+    // ELF64 header: e_shoff@40(u64) e_shentsize@58(u16) e_shnum@60(u16) e_shstrndx@62(u16)
+    let shoff = read_u64(&bytes, 40);
+    let shentsize = read_u16(&bytes, 58) as usize;
+    let shnum = read_u16(&bytes, 60) as usize;
+    let shstrndx = read_u16(&bytes, 62) as usize;
+    if shentsize < 64 || shnum == 0 || shstrndx >= shnum {
+        return false;
+    }
+    let section = |i: usize| -> Option<&[u8]> {
+        let off = (shoff as usize).checked_add(i * shentsize)?;
+        bytes.get(off..off + shentsize)
+    };
+    // section header fields: sh_name@0(u32) sh_type@4(u32) sh_offset@24(u64) sh_size@32(u64)
+    // 注意：section() 返回的是 section header（64B 元数据），字符串表数据
+    // 需按 header 中的 sh_offset/sh_size 在文件内容上再取一次。
+    let Some(shstr_hdr) = section(shstrndx) else {
+        return false;
+    };
+    let shstr_off = read_u64(shstr_hdr, 24) as usize;
+    let shstr_size = read_u64(shstr_hdr, 32) as usize;
+    let Some(shstr) = bytes.get(shstr_off..shstr_off + shstr_size) else {
+        return false;
+    };
+    let shstr_name = |off: u32| -> Option<&[u8]> {
+        let s = shstr.get(off as usize..)?;
+        let end = s.iter().position(|&b| b == 0).unwrap_or(s.len());
+        Some(&s[..end])
+    };
+    let mut dynsym: Option<&[u8]> = None;
+    let mut dynstr: Option<&[u8]> = None;
+    for i in 0..shnum {
+        let Some(sh) = section(i) else {
+            continue;
+        };
+        let Some(name) = shstr_name(read_u32(sh, 0)) else {
+            continue;
+        };
+        let stype = read_u32(sh, 4);
+        let off = read_u64(sh, 24) as usize;
+        let size = read_u64(sh, 32) as usize;
+        if name == b".dynsym" && stype == 11 {
+            dynsym = bytes.get(off..off + size);
+        }
+        if name == b".dynstr" && stype == 3 {
+            dynstr = bytes.get(off..off + size);
+        }
+    }
+    let Some(ents) = dynsym else { return false };
+    let Some(strs) = dynstr else { return false };
+    // Elf64_Sym: st_name@0(u32) st_info@4(u8) st_other@5(u8) st_shndx@6(u16)
+    // shndx == 0 (SHN_UNDEF) 表示"未定义引用"——库只引用不提供该符号，不算导出。
+    for ent in ents.chunks(24) {
+        if ent.len() < 24 {
+            continue;
+        }
+        if read_u16(ent, 6) == 0 {
+            continue;
+        }
+        let st_name = read_u32(ent, 0) as usize;
+        if st_name >= strs.len() {
+            continue;
+        }
+        let rest = &strs[st_name..];
+        let end = rest.iter().position(|&b| b == 0).unwrap_or(rest.len());
+        if &rest[..end] == sym.as_bytes() {
+            return true;
+        }
+    }
+    false
+}
+
+/// ELF 小端定长整数读取（切片长度已由调用方保证）。
+fn read_u64(bytes: &[u8], off: usize) -> u64 {
+    u64::from_le_bytes(bytes[off..off + 8].try_into().unwrap())
+}
+fn read_u32(bytes: &[u8], off: usize) -> u32 {
+    u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap())
+}
+fn read_u16(bytes: &[u8], off: usize) -> u16 {
+    u16::from_le_bytes(bytes[off..off + 2].try_into().unwrap())
 }
 
 /// 确保 `libascendcl` 基础库之外的多余符号有库可链。
@@ -211,7 +314,15 @@ fn link_symbol_provenance(lib_dir: &Path, sym: &str) {
         return;
     }
     // 候选库（按出现频率排序），找第一个导出的
-    let candidates = ["libacl_rt.so", "libacl_rt_impl.so", "libascend_common.so"];
+    let candidates = [
+        "libacl_rt.so",
+        "libacl_rt_impl.so",
+        "libascend_common.so",
+        "libopapi.so",
+        "libnnopbase.so",
+        "libaclnn.so",
+        "libfmk_onnx_parser.so",
+    ];
     for lib in candidates {
         if lib_contains_symbol(lib_dir, lib, sym) {
             let link_name = lib
@@ -244,6 +355,92 @@ fn link_symbol_provenance(lib_dir: &Path, sym: &str) {
         }
     }
     eprintln!("cann-sys: 警告: 未在任何库中找到符号 {sym}，链接可能失败（请检查 lib64 目录）");
+}
+
+/// 编译 GE 图引擎 C++ shim（`src/ge_shim.cc`）为静态库 `libge_shim.a` 并链接。
+///
+/// 背景（L1-3）：GE 的 `aclgrph*` 是 **C++ API**（`include/parser/onnx_parser.h` /
+/// `include/ge/ge_ir_build.h`），Rust 无法直接 `extern "C"` 声明，需一个 C++ 桥接层。
+/// 流程：`cc -std=c++17 -fPIC -c` → `ar crs libge_shim.a` → 静态链接，
+/// 并追加 `-lstdc++`（shim 使用 std::map/string/shared_ptr 等 C++ 标准库）。
+/// include 需要两级：`<include_dir>`（parser/、graph/、ge/ 头文件）与其父目录。
+/// 仅 ffi 档执行（与 libascendcl 同一档位）；失败仅警告不阻断
+/// （链接期缺 `cann_grph_*` 符号会以显式错误暴露）。
+fn build_ge_shim(include_dir: &Path) {
+    let manifest = match env::var("CARGO_MANIFEST_DIR") {
+        Ok(d) => PathBuf::from(d),
+        Err(_) => {
+            eprintln!("cann-sys: 警告: 无 CARGO_MANIFEST_DIR，跳过 GE shim 编译");
+            return;
+        }
+    };
+    let shim_src = manifest.join("src").join("ge_shim.cc");
+    let out_dir = match env::var("OUT_DIR") {
+        Ok(d) => PathBuf::from(d),
+        Err(_) => {
+            eprintln!("cann-sys: 警告: 无 OUT_DIR，跳过 GE shim 编译");
+            return;
+        }
+    };
+    let obj = out_dir.join("ge_shim.o");
+    let archive = out_dir.join("libge_shim.a");
+    // include 两级：<include_dir>（parser/、graph/、ge/）与其父目录（external/ 等相对包含）
+    let include_root = include_dir.parent().unwrap_or(include_dir);
+    let cc = env::var("CC").unwrap_or_else(|_| "cc".to_string());
+    let ar = env::var("AR").unwrap_or_else(|_| "ar".to_string());
+
+    let compiled = match Command::new(&cc)
+        .arg("-std=c++17")
+        .arg("-fPIC")
+        .arg("-c")
+        .arg(&shim_src)
+        .arg("-I")
+        .arg(include_dir)
+        .arg("-I")
+        .arg(include_root)
+        .arg("-o")
+        .arg(&obj)
+        .output()
+    {
+        Ok(out) if out.status.success() => true,
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            eprintln!("cann-sys: 警告: GE shim 编译失败，跳过（链接期将缺 cann_grph_* 符号）");
+            eprintln!("cann-sys: cc 输出:\n{stderr}");
+            println!("cargo:warning=GE shim 编译失败，链接期将缺 cann_grph_* 符号");
+            false
+        }
+        Err(e) => {
+            eprintln!("cann-sys: 警告: 无法启动 C++ 编译器 {cc}（{e}），跳过 GE shim 编译");
+            false
+        }
+    };
+    if !compiled {
+        return;
+    }
+
+    let archived = match Command::new(&ar)
+        .arg("crs")
+        .arg(&archive)
+        .arg(&obj)
+        .status()
+    {
+        Ok(s) => s.success(),
+        Err(e) => {
+            eprintln!("cann-sys: 警告: 无法启动 ar（{e}），跳过 GE shim 打包");
+            false
+        }
+    };
+    if !archived {
+        return;
+    }
+
+    println!("cargo:rustc-link-search=native={}", out_dir.display());
+    println!("cargo:rustc-link-lib=static=ge_shim");
+    // shim 使用 C++ 标准库（std::map/std::string/std::shared_ptr），须显式链 libstdc++
+    println!("cargo:rustc-link-lib=dylib=stdc++");
+    // ge_shim.cc 变更时重跑 build.rs（头文件目录变更已由 rerun-if-changed=include 覆盖）
+    println!("cargo:rerun-if-changed={}", shim_src.display());
 }
 
 /// 构建入口。
@@ -303,6 +500,26 @@ fn main() {
                 // （如 aclsysGetVersionStr 在部分版本位于 libacl_rt.so，而非 libascendcl.so）
                 link_symbol_provenance(&lib_dir, "aclsysGetVersionStr");
                 link_symbol_provenance(&lib_dir, "aclsysGetVersionNum");
+
+                // ---- GE 图引擎 C++ shim（L1-3）----
+                // GE 的 aclgrph* 是 C++ API，经 src/ge_shim.cc 桥接为 extern "C"，
+                // 编译为静态库 libge_shim.a 并链接（含 -lstdc++）。
+                build_ge_shim(&include_dir);
+                // 符号探测：跨 SDK 版本/架构的 GE 符号库归属差异由
+                // link_symbol_provenance 兜底（基础库未含时自动补链）。
+                link_symbol_provenance(&lib_dir, "aclgrphParseONNX");
+                link_symbol_provenance(&lib_dir, "aclgrphParseONNXFromMem");
+                link_symbol_provenance(&lib_dir, "aclCreateTensor");
+                link_symbol_provenance(&lib_dir, "aclnnMatmul");
+                // 显式补链接库名（仅当 .so 存在于 lib64 时，兼容跨版本差异；nm -D 验证）：
+                // - libfmk_onnx_parser.so：导出 aclgrphParseONNX / aclgrphParseONNXFromMem
+                // - libge_compiler.so：导出 aclgrphBuildModel / aclgrphSaveModel
+                // - libge_common.so：ge::Graph 等 GE 公共符号所在库（部分版本兜底）
+                for ge_lib in ["fmk_onnx_parser", "ge_compiler", "ge_common"] {
+                    if lib_dir.join(format!("lib{ge_lib}.so")).exists() {
+                        println!("cargo:rustc-link-lib={ge_lib}");
+                    }
+                }
             } else {
                 eprintln!("cann-sys: ffi 特性未启用，仅类型/常量编译（无链接）");
             }
