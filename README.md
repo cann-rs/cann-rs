@@ -93,11 +93,17 @@ fn main() {
 
 ## SDK 路径检测顺序
 
-1. `ASCEND_TOOLKIT_HOME` 环境变量
-2. `ASCEND_HOME_PATH` 环境变量
-3. `ASCEND_HOME` 环境变量
-4. `$HOME/Ascend/cann`
-5. `/usr/local/Ascend`
+按 `set_env.sh` 导出的环境变量优先（不写死版本路径），依次：
+
+1. `ASCEND_TOOLKIT_HOME`（set_env.sh 主变量）
+2. `ASCEND_HOME_PATH`
+3. `ASCEND_AICPU_PATH`
+4. `ASCEND_HOME`（旧版本兼容）
+5. `ASCEND_OPP_PATH`（取其父目录）
+6. `$HOME/Ascend/cann`
+7. `/usr/local/Ascend`（官方标准安装根）
+
+链接/运行时搜索路径：主 `lib64` + 由安装根派生的插件库目录（`lib64/plugin/opskernel`、`lib64/plugin/nnengine`、`opp/.../op_tiling`、`tools/aml/lib64`、driver 库）+ 用户 `LD_LIBRARY_PATH`（source 过 `set_env.sh` 后自动包含）。
 
 ## License
 

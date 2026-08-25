@@ -42,34 +42,53 @@ const SYMBOLS: &[&str] = &[
     "aclrtEventElapsedTime",
 ];
 
+/// 读取并规范化环境变量路径（去空字符串与首尾空白）。
+fn env_path(var: &str) -> Option<PathBuf> {
+    env::var(var)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+}
+
 /// 查找 CANN SDK 安装目录。
 ///
-/// 按优先级依次检测以下路径：
-/// 1. `ASCEND_TOOLKIT_HOME` 环境变量
-/// 2. `ASCEND_HOME_PATH` 环境变量
-/// 3. `ASCEND_HOME` 环境变量
-/// 4. `$HOME/Ascend/cann`
-/// 5. `/usr/local/Ascend`
+/// 按优先级依次检测以下路径（均来自 `set_env.sh` 导出的环境变量，不写死版本路径）：
+/// 1. `ASCEND_TOOLKIT_HOME`（`set_env.sh` 主变量，= 安装根）
+/// 2. `ASCEND_HOME_PATH`（= 安装根）
+/// 3. `ASCEND_AICPU_PATH`（= 安装根）
+/// 4. `ASCEND_HOME`（旧版本兼容）
+/// 5. `ASCEND_OPP_PATH`（= 根/opp，取其父目录）
+/// 6. `$HOME/Ascend/cann`（默认安装位置）
+/// 7. `/usr/local/Ascend`（官方标准安装根兜底）
 ///
 /// 需要目录下存在 `include/acl/acl_rt.h` 和 `lib64/libascendcl.so` 才确认有效。
 fn sdk_candidates() -> Vec<PathBuf> {
-    [
-        env::var("ASCEND_TOOLKIT_HOME").ok().map(PathBuf::from),
-        env::var("ASCEND_HOME_PATH").ok().map(PathBuf::from),
-        env::var("ASCEND_HOME").ok().map(PathBuf::from),
-        env::var("HOME")
-            .ok()
-            .map(|h| PathBuf::from(h).join("Ascend").join("cann")),
-        Some(PathBuf::from("/usr/local/Ascend")),
+    let mut list: Vec<PathBuf> = [
+        env_path("ASCEND_TOOLKIT_HOME"),
+        env_path("ASCEND_HOME_PATH"),
+        env_path("ASCEND_AICPU_PATH"),
+        env_path("ASCEND_HOME"),
+        env_path("ASCEND_OPP_PATH").and_then(|p| p.parent().map(PathBuf::from)),
     ]
     .into_iter()
     .flatten()
-    .collect()
+    .collect();
+    if let Some(home) = env_path("HOME") {
+        list.push(home.join("Ascend").join("cann"));
+    }
+    list.push(PathBuf::from("/usr/local/Ascend"));
+    list
 }
 
 fn find_cann_sdk() -> Option<(PathBuf, PathBuf, PathBuf)> {
+    let mut checked: Vec<PathBuf> = Vec::new();
     for candidate in sdk_candidates() {
         let base = fs::canonicalize(&candidate).unwrap_or_else(|_| candidate.clone());
+        if checked.contains(&base) {
+            continue;
+        }
+        checked.push(base.clone());
         let include = base.join("include");
         let lib = base.join("lib64");
         if include.join("acl").join("acl_rt.h").exists() && lib.join("libascendcl.so").exists() {
@@ -77,6 +96,52 @@ fn find_cann_sdk() -> Option<(PathBuf, PathBuf, PathBuf)> {
         }
     }
     None
+}
+
+/// 收集链接/加载搜索目录（全部存在性校验 + 去重）。
+///
+/// 与 `set_env.sh` 的 `LD_LIBRARY_PATH` 结构对应（由安装根派生，不写死版本路径）：
+/// 主 `lib64`、插件目录（opskernel/nnengine）、op_tiling 库、aml 工具库、driver 库；
+/// 再并入用户 `LD_LIBRARY_PATH` 中实际存在的目录（source 过 `set_env.sh` 时驱动等路径自动覆盖）。
+fn lib_search_dirs(root: &Path, lib_dir: &Path) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    let push_if = |dirs: &mut Vec<PathBuf>, p: PathBuf| {
+        if p.is_dir() && !dirs.contains(&p) {
+            dirs.push(p);
+        }
+    };
+    push_if(&mut dirs, lib_dir.to_path_buf());
+    push_if(
+        &mut dirs,
+        root.join("lib64").join("plugin").join("opskernel"),
+    );
+    push_if(
+        &mut dirs,
+        root.join("lib64").join("plugin").join("nnengine"),
+    );
+    push_if(
+        &mut dirs,
+        root.join("opp")
+            .join("built-in")
+            .join("op_impl")
+            .join("ai_core")
+            .join("tbe")
+            .join("op_tiling")
+            .join("lib")
+            .join("linux"),
+    );
+    push_if(&mut dirs, root.join("tools").join("aml").join("lib64"));
+    push_if(
+        &mut dirs,
+        root.join("tools").join("aml").join("lib64").join("plugin"),
+    );
+    push_if(&mut dirs, PathBuf::from("/usr/local/Ascend/driver/lib64"));
+    if let Ok(ld) = env::var("LD_LIBRARY_PATH") {
+        for part in ld.split(':').map(PathBuf::from) {
+            push_if(&mut dirs, part);
+        }
+    }
+    dirs
 }
 
 /// 从 `include/acl`（含 `error_codes/` 子目录）探测符号存在性，返回存在的符号名列表（函数 + `ACL_ERROR_RT_*` 宏）。
@@ -194,7 +259,10 @@ fn main() {
 
     println!("cargo:rerun-if-env-changed=ASCEND_TOOLKIT_HOME");
     println!("cargo:rerun-if-env-changed=ASCEND_HOME_PATH");
+    println!("cargo:rerun-if-env-changed=ASCEND_AICPU_PATH");
+    println!("cargo:rerun-if-env-changed=ASCEND_OPP_PATH");
     println!("cargo:rerun-if-env-changed=ASCEND_HOME");
+    println!("cargo:rerun-if-env-changed=LD_LIBRARY_PATH");
 
     match find_cann_sdk() {
         Some((base, include_dir, lib_dir)) => {
@@ -219,9 +287,13 @@ fn main() {
             );
 
             if ffi_enabled {
-                println!("cargo:rustc-link-search=native={}", lib_dir.display());
+                // 搜索/rpath 目录集：主 lib64 + set_env.sh LD_LIBRARY_PATH 结构（插件/op_tiling/aml/driver）+ 用户 LD_LIBRARY_PATH
+                let search_dirs = lib_search_dirs(&base, &lib_dir);
+                for d in &search_dirs {
+                    println!("cargo:rustc-link-search=native={}", d.display());
+                    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", d.display());
+                }
                 println!("cargo:rustc-link-lib=ascendcl");
-                println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
                 let devlib = base.join("aarch64-linux").join("devlib");
                 if devlib.exists() {
                     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", devlib.display());
