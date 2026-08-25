@@ -37,8 +37,7 @@ pub mod tensor;
 /// CANN 版本查询。
 pub mod version;
 
-#[cfg(feature = "ffi")]
-use crate::error::Error;
+pub use crate::error::Error;
 
 /// 真机 smoke 共享上下文：CANN 的 `aclInit` 是进程级单次（7.x 重复调用返回
 /// `ACL_ERROR_REPEAT_INITIALIZE`），并行测试必须共享同一个实例（不 Drop）。
@@ -82,3 +81,7 @@ pub(crate) fn ensure_aclnn_init() -> Result<(), Error> {
         Err(Error::from(code))
     }
 }
+
+/// 顶层便捷重导出（常用类型）。
+pub use context::Context;
+pub use version::Version;

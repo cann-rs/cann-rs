@@ -10,9 +10,9 @@
 //! 输出 CANN 软件版本、设备数量与每一台设备的 SOC 型号
 //! （如 `Ascend910B1`、`Ascend310B` 等）。
 
-use cann::device;
-use cann::Version;
 use cann::Context;
+use cann::Version;
+use cann::device;
 
 fn main() {
     // 1) CANN 软件版本（7.x 回退 aclrtGetVersion，8.x 用 aclsysGetVersionStr）
@@ -20,13 +20,12 @@ fn main() {
         Ok(v) => println!("CANN 版本: {v}"),
         Err(e) => println!("CANN 版本: 未检测到 ({e})"),
     }
-    match Version::num() {
-        Ok(n) => println!("CANN 版本号: {n}"),
-        Err(_) => {}
+    if let Ok(n) = Version::num() {
+        println!("CANN 版本号: {n}");
     }
 
     // 2) 初始化运行环境（进程级单次，幂等）
-    let ctx = match Context::new() {
+    let _ctx = match Context::new() {
         Ok(ctx) => ctx,
         Err(e) => {
             eprintln!("初始化失败: {e}");
@@ -54,5 +53,5 @@ fn main() {
         Err(e) => println!("设备数量查询失败: {e}"),
     }
 
-    drop(ctx); // 进程退出前释放运行环境
+    // _ctx 在作用域末尾 Drop（ffi 下触发 aclFinalize）
 }
