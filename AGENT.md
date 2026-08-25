@@ -723,3 +723,10 @@ compile_error!("unsupported platform");
 - [SemVer 2.0.0](https://semver.org/)
 - [Keep a Changelog](https://keepachangelog.com/)
 - [Conventional Commits](https://www.conventionalcommits.org/)
+
+## 16. 跨仓库协作（reinfer）
+
+- reinfer 位于 `/home/dora/Dev/ai-tokens/reinfer`；契约锚点 = `reinfer/specs/002-ascend-backend/plan.md`（L0 契约表），镜像 = `docs/boundary-with-reinfer.md`
+- 事实底稿：`docs/cann-850-catalog.md`（CANN 8.5.0 官方符号/签名核定表，§2 为 verify-list 裁定）
+- 规则：R3 契约先行（签名变更先改 reinfer 锚点再实现）；R5 开发期 reinfer 用 `[patch]` 本地路径；R6 双仓库 Conventional Commits + 无 AI 署名 trailer
+- 符号核实一律以昇腾官方 8.5 文档为准（SSR 正文 + `/ascendgateway/ascendservice/doc/node/tree` 目录 API）
