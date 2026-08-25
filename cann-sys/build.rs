@@ -454,6 +454,23 @@ fn build_ge_shim(include_dir: &Path) {
     println!("cargo:rerun-if-changed={}", shim_src.display());
 }
 
+/// 扫描 lib64 目录：任一库导出目标符号即返回 true。
+fn lib_dir_each(lib_dir: &Path, sym: &str) -> bool {
+    let Ok(entries) = fs::read_dir(lib_dir) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with("lib")
+            && name.ends_with(".so")
+            && lib_contains_symbol(lib_dir, &name, sym)
+        {
+            return true;
+        }
+    }
+    false
+}
+
 /// 构建入口。
 fn main() {
     println!("cargo::rustc-check-cfg=cfg(cann_sys_ffi)");
@@ -483,6 +500,22 @@ fn main() {
                 println!("cargo::rustc-check-cfg=cfg({})", cfg_name(sym));
             }
             let mut found = probe_symbols(&include_dir);
+            // 存在性最终以"某库确实导出该符号"为准：头文件可能有声明但库未导出
+            // （如 CANN 7.x 的 parser 头含 aclgrph* 声明而 libfmk_onnx_parser.so 仅 U 引用）。
+            for probe in [
+                "aclsysGetVersionStr",
+                "aclsysGetVersionNum",
+                "aclgrphParseONNX",
+                "aclgrphParseONNXFromMem",
+            ] {
+                let exported = lib_dir_each(&lib_dir, probe);
+                if exported && !found.iter().any(|s| s == probe) {
+                    found.push(probe.to_string());
+                }
+                if !exported {
+                    found.retain(|s| s != probe);
+                }
+            }
             found.sort();
             for sym in &found {
                 println!("cargo::rustc-cfg={}", cfg_name(sym));
@@ -504,6 +537,9 @@ fn main() {
                 for d in &search_dirs {
                     println!("cargo:rustc-link-search=native={}", d.display());
                     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", d.display());
+                    // GNU ld 解析 DT_NEEDED（库的库依赖）用 rpath-link，不查 -L；
+                    // CANN 库族互依赖（libascendcl -> liberror_manager 等）靠它闭合
+                    println!("cargo:rustc-link-arg=-Wl,-rpath-link,{}", d.display());
                 }
                 println!("cargo:rustc-link-lib=ascendcl");
                 let devlib = base.join("aarch64-linux").join("devlib");
@@ -533,13 +569,43 @@ fn main() {
                 link_symbol_provenance(&lib_dir, "aclgrphParseONNXFromMem");
                 link_symbol_provenance(&lib_dir, "aclCreateTensor");
                 link_symbol_provenance(&lib_dir, "aclnnMatmul");
-                // 显式补链接库名（仅当 .so 存在于 lib64 时，兼容跨版本差异；nm -D 验证）：
+                // 库族互依赖闭合：统一全量链接 lib64 + --no-as-needed 保留全部
+                // （如 libdvpp_op_base -> libacl_dvpp_mpi、libascendcl -> libgert 交叉引用）。
+                let mut all_libs: Vec<String> = Vec::new();
+                if let Ok(entries) = fs::read_dir(&lib_dir) {
+                    for entry in entries.flatten() {
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        if let Some(base) =
+                            name.strip_prefix("lib").and_then(|s| s.strip_suffix(".so"))
+                            && base != "ge_shim"
+                            && !all_libs.iter().any(|l| l == base)
+                        {
+                            all_libs.push(base.to_string());
+                        }
+                    }
+                }
+                all_libs.sort();
+                // 逐库以 link-arg 传入：GNU ld 的 --no-as-needed 作用于
+                // 后续 -l（rustc 的 rustc-link-lib 在 link-arg 之前，as-needed 语义已丢它们）
+                for base in &all_libs {
+                    println!("cargo:rustc-link-arg=-Wl,--no-as-needed,-l{base}");
+                }
+                println!("cargo:rustc-link-arg=-Wl,--as-needed");
+                eprintln!(
+                    "cann-sys: 全量链接 lib64 共 {} 个库（库族闭合）",
+                    all_libs.len()
+                );
+                // 显式补链接库名（仅当 SDK 存在 aclgrph* —— CANN 8.x —— 时链 GE 族，
+                // 避免 7.x 上 GE 库族互依赖会把整族未解析符号拖进链接）：
                 // - libfmk_onnx_parser.so：导出 aclgrphParseONNX / aclgrphParseONNXFromMem
                 // - libge_compiler.so：导出 aclgrphBuildModel / aclgrphSaveModel
                 // - libge_common.so：ge::Graph 等 GE 公共符号所在库（部分版本兜底）
-                for ge_lib in ["fmk_onnx_parser", "ge_compiler", "ge_common"] {
-                    if lib_dir.join(format!("lib{ge_lib}.so")).exists() {
-                        println!("cargo:rustc-link-lib={ge_lib}");
+                let has_ge = lib_dir_each(&lib_dir, "aclgrphParseONNX");
+                if has_ge {
+                    for ge_lib in ["fmk_onnx_parser", "ge_compiler", "ge_common"] {
+                        if lib_dir.join(format!("lib{ge_lib}.so")).exists() {
+                            println!("cargo:rustc-link-lib={ge_lib}");
+                        }
                     }
                 }
             } else {

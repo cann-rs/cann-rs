@@ -181,6 +181,91 @@ unsafe extern "C" {
     pub fn cann_grph_destroy(handle: *mut aclgrphGraph) -> graphStatus;
 }
 
+/// 统一包络：解析 ONNX 文件（当前 SDK 无 GE 时返回 `GRAPH_FAILED`）。
+///
+/// 存在性由本模块内部处理；调用方（cann 层）无需感知 SDK 版本差异。
+///
+/// # Safety
+/// - `path` 必须为 NUL 结尾的有效 C 字符串。
+/// - `handle_out` 必须指向有效的 `*mut` 槽位；成功后句柄由调用方托管，
+///   须配对调用 [`graph_destroy`] 恰好一次。
+#[cfg(cann_sys_ffi)]
+pub unsafe fn parse_onnx_from_file(
+    path: *const c_char,
+    handle_out: *mut *mut aclgrphGraph,
+) -> graphStatus {
+    #[cfg(cann_sys_has_aclgrphParseONNX)]
+    {
+        return cann_grph_parse_onnx_from_file(path, handle_out);
+    }
+    #[cfg(not(cann_sys_has_aclgrphParseONNX))]
+    {
+        let _ = (path, handle_out);
+        GRAPH_FAILED
+    }
+}
+
+/// 统一包络：从内存解析 ONNX（当前 SDK 无 GE 时返回 `GRAPH_FAILED`）。
+///
+/// # Safety
+/// - `buffer` 必须指向长度 `size` 的合法可读内存。
+/// - `handle_out` 必须指向有效的槽位；成功后配对 [`graph_destroy`] 释放一次。
+#[cfg(cann_sys_ffi)]
+pub unsafe fn parse_onnx_from_mem(
+    buffer: *const c_char,
+    size: usize,
+    handle_out: *mut *mut aclgrphGraph,
+) -> graphStatus {
+    #[cfg(cann_sys_has_aclgrphParseONNX)]
+    {
+        return cann_grph_parse_onnx_from_mem(buffer, size, handle_out);
+    }
+    #[cfg(not(cann_sys_has_aclgrphParseONNX))]
+    {
+        let _ = (buffer, size, handle_out);
+        GRAPH_FAILED
+    }
+}
+
+/// 统一包络：编译并保存 .om（当前 SDK 无 GE 时返回 `GRAPH_FAILED`）。
+///
+/// # Safety
+/// - `handle` 必须来自 `parse_onnx_from_*` 成功返回、尚未销毁的句柄。
+/// - `save_path` 必须为 NUL 结尾的合法 C 字符串。
+#[cfg(cann_sys_ffi)]
+pub unsafe fn build_model(handle: *mut aclgrphGraph, save_path: *const c_char) -> graphStatus {
+    #[cfg(cann_sys_has_aclgrphParseONNX)]
+    {
+        return cann_grph_build_model(handle, save_path);
+    }
+    #[cfg(not(cann_sys_has_aclgrphParseONNX))]
+    {
+        let _ = (handle, save_path);
+        GRAPH_FAILED
+    }
+}
+
+/// 统一包络：销毁图句柄（当前 SDK 无 GE 时返回 `GRAPH_FAILED`）。
+///
+/// # Safety
+/// - `handle` 必须来自 `parse_onnx_from_*` 成功返回的句柄，且恰好释放一次。
+#[cfg(cann_sys_ffi)]
+pub unsafe fn graph_destroy(handle: *mut aclgrphGraph) -> graphStatus {
+    #[cfg(cann_sys_has_aclgrphParseONNX)]
+    {
+        return cann_grph_destroy(handle);
+    }
+    #[cfg(not(cann_sys_has_aclgrphParseONNX))]
+    {
+        let _ = handle;
+        GRAPH_FAILED
+    }
+}
+
+/// 当前 SDK 是否提供 GE 图引擎（CANN 8.x+）。
+#[cfg(cann_sys_ffi)]
+pub const GE_AVAILABLE: bool = cfg!(cann_sys_has_aclgrphParseONNX);
+
 /// 无需 FFI 的类型级测试（无 SDK 环境下也运行）。
 ///
 /// `graphStatus`、`GRAPH_*` 常量与不透明句柄类型在无 `ffi` 特性时同样编译；
@@ -238,7 +323,7 @@ mod tests {
 // 链接级验证：验证 shim 静态库符号已解析（只取函数地址，不调用函数体，
 // 不触碰 SDK 运行时——实际解析 ONNX 需要 GE/NPU 环境，真机验证移交开发板），
 // 默认忽略。
-#[cfg(all(cann_sys_ffi, test))]
+#[cfg(all(cann_sys_ffi, test, cann_sys_has_aclgrphParseONNX))]
 mod ffi_tests {
     use super::*;
 

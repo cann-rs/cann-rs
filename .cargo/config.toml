@@ -1,0 +1,9 @@
+# CANN SDK 库族链接参数（7.x 板子必需；8.5 亦安全）：
+# - allow-shlib-undefined：GNU ld 允许共享库（CANN 库族 ge::/gert:: 交叉引用）
+#   的未定义符号进入可执行文件（运行时由 CANN 环境解析）
+# - no-as-needed：保留无直接引用的库（库族互依赖闭合）
+[target.aarch64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-Wl,--allow-shlib-undefined", "-C", "link-arg=-Wl,--no-as-needed"]
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-Wl,--allow-shlib-undefined", "-C", "link-arg=-Wl,--no-as-needed"]
