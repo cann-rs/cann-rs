@@ -62,3 +62,10 @@ reinfer 昇腾后端完成"最小闭环"（L0 版本/设备诊断）后，需要
 - 符号漂移：沿用 build.rs `cann_sys_has_*` 探测（新增 GE/aclnn 符号到 SYMBOLS）
 - GE 链接：新增 `libge_common`/`libge_compiler` 等链接库时在 build.rs 中 gated（仅 ffi）
 - 许可不加；与 L0 同守 constitution（RAII、SAFETY、禁止 panic…）
+
+## Changelog
+
+- 2026-08-25：发布。verify-list 全清（本地 SDK 8.5 头文件；真机项移交开发板）；
+  采用 C++ shim 桥接 `aclgrph*`（C++ API）；`aclError`/`aclnnStatus` 同为 `i32` 别名
+  （共用 `From<aclError>`，E0119 限制文档化）；workspace 使用 host 对齐缓冲区
+  （官方建议 device 侧，真机验证失败则迁移 `DeviceBuffer`——待开发板）。

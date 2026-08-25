@@ -66,6 +66,16 @@ fn main() {
 | `Error::is_oom()` / `is_recoverable()` | 错误分类（码段白名单，未知码 fail-closed） |
 | `Error { code, message }` | CANN 操作错误 |
 
+### L1（aclnn 算子树，需 `ffi` 特性）
+
+| 类型 | 说明 |
+|------|------|
+| `DataType` / `Format` | aclDataType / aclFormat 安全枚举（双向映射） |
+| `Tensor`（RAII） | 张量创建/析构 + 形状/类型/格式查询（`aclCreateTensor` 族） |
+| `TensorList` / `Scalar` | 张量列表与标量 |
+| `Matmul` / `Softmax` / `RmsNorm` | aclnn 两段式算子：`new()` 计算 workspace → `launch(&Stream)` 执行 |
+| `Graph` / `Session` | GE 图引擎：`from_onnx` → `build_and_save(.om)`（C++ shim 桥接） |
+
 ### `cann-sys` crate
 
 | 项目 | 说明 |

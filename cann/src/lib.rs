@@ -26,7 +26,13 @@ pub mod device;
 pub mod error;
 /// Event 事件。
 pub mod event;
+/// GE 计算图（ONNX 解析与 .om 编译）。
+pub mod graph;
+/// aclnn 算子（Matmul/Softmax/RmsNorm）。
+pub mod op;
 /// Stream 流。
 pub mod stream;
+/// 张量/张量列表/标量等 aclnn 基础类型。
+pub mod tensor;
 /// CANN 版本查询。
 pub mod version;
