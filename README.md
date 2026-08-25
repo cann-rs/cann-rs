@@ -55,6 +55,15 @@ fn main() {
 |------|------|
 | `Version::str() -> Result<String, Error>` | 查询 CANN 版本字符串（如 `"9.0.0"`） |
 | `Version::num() -> Result<i32, Error>` | 查询 CANN 版本号（如 `90_000_000`） |
+| `Context`（RAII） | `aclInit`/`aclFinalize` 运行环境生命周期 |
+| `device_count() -> Result<u32, Error>` | 可用设备数量（`aclrtGetDeviceCount`） |
+| `set_device(dev)` / `reset_device(dev)` | per-thread 设备绑定与释放（引用计数配对） |
+| `soc_name() -> Result<String, Error>` | 当前设备 SOC 型号（如 `"Ascend910B3"`） |
+| `Stream`（RAII） | 流创建/销毁 + `synchronize()`/`query()` |
+| `Event`（RAII） | 事件创建/销毁；`record(stream)`/`synchronize()`/`stream_wait(stream)` |
+| `DeviceBuffer`（RAII, Send） | 设备内存：`alloc(size, MemFlags)`/`as_ptr()`/`len()` |
+| `HostBuffer`（RAII） | 锁页主机内存：`alloc(size)`/`as_ptr()`/`len()` |
+| `Error::is_oom()` / `is_recoverable()` | 错误分类（码段白名单，未知码 fail-closed） |
 | `Error { code, message }` | CANN 操作错误 |
 
 ### `cann-sys` crate

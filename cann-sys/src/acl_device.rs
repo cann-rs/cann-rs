@@ -93,6 +93,7 @@ unsafe extern "C" {
 mod tests {
     use super::*;
     use crate::acl_base_rt::*;
+    use crate::acl_rt::{aclFinalize, aclInit};
     use std::ffi::CStr;
 
     #[test]

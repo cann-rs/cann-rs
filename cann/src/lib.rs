@@ -5,8 +5,28 @@
 //! ## 模块
 //! - [`error`] —— CANN 错误类型。
 //! - [`version`] —— CANN 版本查询。
+//! - [`context`] —— CANN 上下文（RAII）。
+//! - [`device`] —— 设备管理。
+//! - [`stream`] —— Stream 流。
+//! - [`event`] —— Event 事件。
+//! - [`buffer`] —— 设备/主机内存缓冲区。
+//!
+//! ## 线程亲和性
+//!
+//! ACL 的当前设备按调用线程绑定（`aclrtSetDevice`），跨线程使用设备资源
+//! 前必须在目标线程显式 `set_device`。详见各模块文档。
 
+/// 设备/主机内存缓冲区。
+pub mod buffer;
+/// CANN 上下文（RAII）。
+pub mod context;
+/// 设备管理。
+pub mod device;
 /// CANN 错误类型。
 pub mod error;
+/// Event 事件。
+pub mod event;
+/// Stream 流。
+pub mod stream;
 /// CANN 版本查询。
 pub mod version;

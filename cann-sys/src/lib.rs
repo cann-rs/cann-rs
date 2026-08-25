@@ -18,4 +18,5 @@ pub mod acl_memory;
 pub mod acl_rt;
 
 pub use acl_base_rt::*;
+pub use acl_error_code::*;
 pub use acl_rt::*;
