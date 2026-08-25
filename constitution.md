@@ -59,3 +59,43 @@
 - [ ] 非硬件依赖的测试全部通过
 - [ ] 文档生成完整，无 broken link
 - [ ] 无未标注 `// SAFETY:` 的 `unsafe` 代码
+
+## 9. Git 版本控制规则
+
+### 9.1 提交信息
+
+- 使用 Conventional Commits（`<type>(<scope>): <description>`；type 见 AGENT.md §7.4）
+- **禁止任何 AI 签名 trailer**：提交信息（含 body/footer）不得包含 `Co-Authored-By: Claude`、`Generated with Claude Code` 等自动化署名，也不得虚构人工署名
+- 提交粒度：一次提交只做一件事（一个功能/一个修复/一份文档），禁止多主题混提
+
+### 9.2 提交范围
+
+- 仅提交与本次改动直接相关的文件；禁止 `git add -A` 混入无关文件
+- 提交前检查 `git status`/`git diff --stat` 确认范围
+- `Cargo.lock`、`target/`、临时抓取文件（`/tmp/*` 等）不入库
+- 文档类提交类型用 `docs`；SDD 文档与代码分开提交
+
+### 9.3 分支与历史
+
+- 主力开发分支 `main`；功能/修复先建分支再合入
+- 禁止改写已推送的历史（rebase 仅限未推送的本地提交）
+- 版本 tag 语义化（SemVer），与 `Cargo.toml` 版本号一致后再打 tag
+
+## 10. Rust 工程门槛（强制）
+
+以下为所有成员 crate 的硬性门槛，与 AGENT.md 保持一致，但以本节为强制底线：
+
+- `cargo fmt --all -- --check` 必须通过；`cargo clippy --workspace -- -D warnings` 必须通过
+- 库代码禁止 `unwrap()`/`expect()`/`panic!()`/`todo!()`/`unimplemented!()`（仅测试与二进制入口允许）
+- 所有 `pub` 项必须有文档注释；所有 `unsafe` 调用必须伴随 `// SAFETY:` 注释
+- 不导出 `pub unsafe fn`；公开 API 不暴露裸指针与 `&'static str` 作 C 字符串返回
+- CANN 资源（Context/Stream/Event/设备内存）必须 RAII（`Drop` 释放），禁止手动泄漏
+- `cann-sys` 保持零第三方依赖（`[dependencies]` 为空）；新增依赖须审计许可证与 `unsafe` 使用
+- **契约先行**：公开 API 签名变更先更新 `reinfer/specs/002` 锚点再实现本地代码（R3）
+
+## 11. 参考资源与事实来源
+
+- `docs/cann-850-catalog.md` —— CANN 8.5.0 官方文档目录树与 API 签名核实表（2026-08-25 抓取），符号/签名裁定以此与官方文档为准；与计划中的 verify-list 对照使用
+- 昇腾文档站：`https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/850/`，正文为 SSR，目录由 `/ascendgateway/ascendservice/doc/node/tree/...` API 供数据（需 Referer）
+- 安装/环境变量说明：`docs/version-detection.md`；版本号编码 `MAJOR×10^7 + MINOR×10^5 + PATCH×10^3`
+- 官方接口签名以文档站 `API/appdevgapi/aclcppdevg_03_*.html` 页为准；核实时优先引用本文档 §2 的核定结果
