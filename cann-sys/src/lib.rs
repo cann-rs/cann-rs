@@ -14,6 +14,14 @@ pub mod acl_device;
 pub mod acl_error_code;
 /// ACL 内存管理原语。
 pub mod acl_memory;
+/// ACL 张量/标量基础类型（acl_meta.h）。
+pub mod acl_meta;
+/// ACL 数据类型/格式枚举。
+pub mod acl_datatype;
+/// aclnn 算子（首批：Matmul/Softmax/RMSNorm）。
+pub mod aclnn_ops;
+/// GE 图引擎（aclgrph*，C++ shim 桥接）。
+pub mod acl_grph;
 /// ACL 运行时 FFI 函数声明与版本查询常量。
 pub mod acl_rt;
 

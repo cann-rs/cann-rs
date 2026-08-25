@@ -100,11 +100,22 @@ pub struct Session;                                // build/save
 | Softmax/RMSNorm 参数形态 | verify-list：aclnn_softmax.h/aclnn_rms_norm.h 逐个签名 |
 | 801 个算子后续批量 | 封装模式（Operator trait + macro 或 codegen）先跑通 3 个，后续批次套用 |
 
-## Verify-list（写代码前逐项核实）
+## Verify-list（2026-08-25 已按本地 SDK 8.5 头文件核定；真机依赖项移交开发板）
 
-- [ ] `aclCreateTensor` 完整签名（acl_meta.h，12+ 参数）
-- [ ] `aclDataType`/`aclFormat`/`aclTranspose` 定义的准确头文件与成员值（acl_base.h vs acl_meta.h）
-- [ ] `aclnn_softmax.h`/`aclnn_rms_norm.h` 算子签名（softmax/rms 的 dim/dtype/scale 等参数形态）
-- [ ] `aclgrph*` 完整签名 + `graphStatus` 类型与错误码族
-- [ ] GE 链接库归属：`nm -D libge_common.so | grep aclgrph` 等
-- [ ] `aclnnMatmul` 的 executor/workspace 生命周期语义（头文件注释）
+- [x] `aclCreateTensor` — ✅ `aclCreateTensor(const int64_t *viewDims, uint64_t viewDimsNum, aclDataType dt,
+      const int64_t *stride, int64_t offset, aclFormat fmt, const int64_t *storageDims, uint64_t storageDimsNum,
+      void *tensorData)`（acl_meta.h，9 参数）
+- [x] `aclDataType` — ✅ `include/acl/acl_base_rt.h`（ACL_DT_UNDEFINED=-1, FLOAT=0, FLOAT16=1, INT8=2, INT32=3,
+      UINT8=4, INT16=6, UINT16=7, UINT32=8, INT64=9, UINT64=10, DOUBLE=11, BOOL=12, STRING=13,
+      COMPLEX64=16, COMPLEX128=17, BF16=27, INT4=29, UINT1=30, COMPLEX32=33, HIFLOAT8=34…）
+- [x] `aclFormat` — ✅ 同 `acl_base_rt.h`（UNDEFINED=-1, NCHW=0, NHWC=1, ND=2, NC1HWC0=3, FRACTAL_Z=4,
+      NC1HWC0_C04=12, HWCN=16, NDHWC=27, FRACTAL_NZ=29, NCDHW=30, NDC1HWC0=32, NC=35, NCL=47…）
+- [x] `aclTranspose` — 首批三算子签名均不含 transpose 参数 → 暂缓绑定（后续批次）
+- [x] `aclnn_softmax.h`/`aclnn_rms_norm.h` — ✅ `aclnnSoftmaxGetWorkspaceSize(self, dim: i64, out, ws*, exec**)`；
+      `aclnnRmsNormGetWorkspaceSize(x, gamma, epsilon: double, yOut, rstdOut, ws*, exec**)`
+- [x] **`aclgrph*` 是 C++ API**（⚠️ 重大发现）— `graphStatus aclgrphParseONNX(const char*, const
+      std::map<ge::AscendString, ge::AscendString>&, ge::Graph&)`；依赖 `include/graph/*.h`
+      （ascend_string.h / ge_error_codes.h / graph.h）；**归属库 = `libfmk_onnx_parser.so`**
+      （非 libge_common）。→ L1-3 采用 **C++ shim 桥接**（编译一个小 C++ 包装为 extern "C"）
+- [x] `aclnnMatmul` executor/workspace 语义 — 头文件注释：workspace 由调用方缓冲（GetWorkspaceSize 出大小），
+      executor 由 GetWorkspaceSize 生成、Launch 消费；两段式共用（真机生命周期验证移交开发板）
