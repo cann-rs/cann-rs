@@ -53,12 +53,15 @@ unsafe extern "C" {
     // # 安全性
     // - `pkgName` 必须是有效的 NUL 结尾 C 字符串。
     // - `versionStr` 必须指向至少 `ACL_PKG_VERSION_MAX_SIZE` 字节的缓冲区。
+    // 存在性门控：aclsys* 为 CANN 8.x+ 符号；7.x 无（版本查询回退 aclrtGetVersion）。
+    #[cfg(cann_sys_has_aclsysGetVersionStr)]
     pub fn aclsysGetVersionStr(pkgName: *const c_char, versionStr: *mut c_char) -> aclError;
 
     // 查询指定软件包的版本号（整数形式）。
     // # 安全性
     // - `pkgName` 必须是有效的 NUL 结尾 C 字符串。
     // - `versionNum` 必须指向有效的 `i32`。
+    #[cfg(cann_sys_has_aclsysGetVersionStr)]
     pub fn aclsysGetVersionNum(pkgName: *const c_char, versionNum: *mut i32) -> aclError;
 
     // 查询 ACL 运行时组件版本（需先调用 `aclInit`）。
@@ -204,6 +207,7 @@ mod tests {
         assert_eq!(ACL_PKG_VERSION_PARTS_MAX_SIZE, 64);
     }
 
+    #[cfg(cann_sys_has_aclsysGetVersionStr)]
     #[test]
     #[ignore = "requires NPU driver"]
     fn test_link_sys_get_version_str() {
@@ -217,6 +221,7 @@ mod tests {
         assert_eq!(ret, ACL_SUCCESS);
     }
 
+    #[cfg(cann_sys_has_aclsysGetVersionStr)]
     #[test]
     #[ignore = "requires NPU driver"]
     fn test_sys_get_version_str_content() {
@@ -240,6 +245,7 @@ mod tests {
         );
     }
 
+    #[cfg(cann_sys_has_aclsysGetVersionStr)]
     #[test]
     #[ignore = "requires NPU driver"]
     fn test_link_sys_get_version_num() {
@@ -252,6 +258,7 @@ mod tests {
         assert_eq!(ret, ACL_SUCCESS);
     }
 
+    #[cfg(cann_sys_has_aclsysGetVersionStr)]
     #[test]
     #[ignore = "requires NPU driver"]
     fn test_sys_get_version_num_plausible() {

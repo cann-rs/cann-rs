@@ -113,6 +113,7 @@ pub const GRAPH_RoundUp_Overflow: graphStatus = 50331426;
 // 签名与 ge_shim.cc 中 `extern "C"` 定义逐项对应；返回值为 graphStatus 原值
 // （shim 直接回传 ge 错误码，不做转换）。
 #[cfg(cann_sys_ffi)]
+#[cfg(cann_sys_has_aclgrphParseONNX)]
 unsafe extern "C" {
     /// C 函数原名：`cann_grph_parse_onnx_from_file`（shim 导出，桥接
     /// `ge::aclgrphParseONNX`）。官方锚点：`include/parser/onnx_parser.h`

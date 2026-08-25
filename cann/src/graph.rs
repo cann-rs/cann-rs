@@ -22,11 +22,11 @@ use std::path::Path;
 /// 设备复位前必须先析构本图。
 #[derive(Debug)]
 pub struct Graph {
-    #[cfg(feature = "ffi")]
+    #[cfg(all(feature = "ffi", cann_sdk_has_aclgrph))]
     handle: *mut c_void,
 }
 
-#[cfg(feature = "ffi")]
+#[cfg(all(feature = "ffi", cann_sdk_has_aclgrph))]
 impl Graph {
     /// 从 ONNX 模型文件解析计算图（对应 `cann_grph_parse_onnx_from_file`）。
     ///
@@ -90,12 +90,63 @@ impl Graph {
     }
 }
 
-#[cfg(feature = "ffi")]
+#[cfg(all(feature = "ffi", cann_sdk_has_aclgrph))]
 impl Drop for Graph {
     fn drop(&mut self) {
         // SAFETY: `self.handle` 来自 `cann_grph_parse_onnx_from_*` 且未被析构；
         // 本类型持有唯一所有权；须与创建时在同一线程析构。
         let _ = unsafe { cann_sys::acl_grph::cann_grph_destroy(self.handle) };
+    }
+}
+
+/// SDK 无 GE 图引擎（CANN 7.x）：`ffi` 启用但无 `aclgrph*` 时的降级实现。
+#[cfg(all(feature = "ffi", not(cann_sdk_has_aclgrph)))]
+impl Graph {
+    /// 从 ONNX 模型文件解析计算图（需要 GE 图引擎，CANN 8.x+）。
+    ///
+    /// 当前 SDK 无 GE 图引擎时返回 `Err(Error)`。
+    #[allow(clippy::new_without_default)]
+    pub fn from_onnx(_path: &Path) -> Result<Self, Error> {
+        Err(unsupported_graph())
+    }
+
+    /// 从内存中的 ONNX 模型字节解析计算图（需要 GE 图引擎，CANN 8.x+）。
+    pub fn from_mem(_bytes: &[u8]) -> Result<Self, Error> {
+        Err(unsupported_graph())
+    }
+
+    /// 编译并保存 .om 模型（需要 GE 图引擎，CANN 8.x+）。
+    #[allow(clippy::unused_self)]
+    pub fn build_and_save(&self, _out_path: &Path) -> Result<(), Error> {
+        Err(unsupported_graph())
+    }
+}
+
+#[cfg(all(feature = "ffi", not(cann_sdk_has_aclgrph)))]
+impl Session {
+    /// 从 ONNX 模型文件创建会话（需要 GE 图引擎，CANN 8.x+）。
+    pub fn from_onnx(_path: &Path) -> Result<Self, Error> {
+        Err(unsupported_graph())
+    }
+
+    /// 从内存中的 ONNX 模型字节创建会话（需要 GE 图引擎，CANN 8.x+）。
+    pub fn from_mem(_bytes: &[u8]) -> Result<Self, Error> {
+        Err(unsupported_graph())
+    }
+
+    /// 编译并保存 .om 模型（需要 GE 图引擎，CANN 8.x+）。
+    #[allow(clippy::unused_self)]
+    pub fn build_and_save(&self, _out_path: &Path) -> Result<(), Error> {
+        Err(unsupported_graph())
+    }
+}
+
+#[cfg(all(feature = "ffi", not(cann_sdk_has_aclgrph)))]
+fn unsupported_graph() -> Error {
+    Error {
+        code: -1,
+        message: "当前 CANN SDK 无 GE 图引擎（aclgrph* 需 CANN 8.x+），Graph/Session 不可用"
+            .to_string(),
     }
 }
 
@@ -133,11 +184,11 @@ impl Graph {
 /// 线程亲和性：与 [`Graph`] 相同，仅限创建线程使用。
 #[derive(Debug)]
 pub struct Session {
-    #[cfg(feature = "ffi")]
+    #[cfg(all(feature = "ffi", cann_sdk_has_aclgrph))]
     graph: Graph,
 }
 
-#[cfg(feature = "ffi")]
+#[cfg(all(feature = "ffi", cann_sdk_has_aclgrph))]
 impl Session {
     /// 从 ONNX 模型文件创建会话（解析计算图）。
     ///
@@ -191,7 +242,7 @@ impl Session {
 ///
 /// 正式的 `From<graphStatus>` 映射由 L1-5 任务在 [`crate::error`] 统一提供，
 /// 在此之前先在此处直接构造。
-#[cfg(feature = "ffi")]
+#[cfg(all(feature = "ffi", cann_sdk_has_aclgrph))]
 fn graph_error(ret: cann_sys::acl_grph::graphStatus) -> Error {
     Error {
         code: ret as i32,
@@ -221,7 +272,7 @@ mod tests {
     }
 }
 
-#[cfg(all(feature = "ffi", test))]
+#[cfg(all(feature = "ffi", test, cann_sdk_has_aclgrph))]
 mod ffi_smoke {
     use super::*;
 
@@ -232,5 +283,16 @@ mod ffi_smoke {
         let missing = Path::new("/nonexistent/cann-rs/never.onnx");
         assert!(Graph::from_onnx(missing).is_err());
         assert!(Session::from_onnx(missing).is_err());
+    }
+}
+
+#[cfg(all(feature = "ffi", test, not(cann_sdk_has_aclgrph)))]
+mod ffi_no_ge_tests {
+    use super::*;
+
+    #[test]
+    fn graph_unavailable_on_sdk_without_ge() {
+        assert!(Graph::from_onnx(Path::new("/x.onnx")).is_err());
+        assert!(Session::from_onnx(Path::new("/x.onnx")).is_err());
     }
 }

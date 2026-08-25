@@ -61,6 +61,9 @@ const SYMBOLS: &[&str] = &[
     "aclnnRmsNorm",
     "aclgrphParseONNX",
     "aclgrphParseONNXFromMem",
+    "aclsysGetVersionStr",
+    "aclsysGetVersionNum",
+    // 7.x 兼容：aclsys 缺失时版查回退 aclrtGetVersion（已在 L0 列表）
 ];
 
 /// 读取并规范化环境变量路径（去空字符串与首尾空白）。
@@ -177,6 +180,12 @@ fn probe_symbols(include_dir: &Path) -> Vec<String> {
     let mut targets: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
     if let Ok(sub) = fs::read_dir(acl_dir.join("error_codes")) {
         targets.extend(sub.flatten().map(|e| e.path()));
+    }
+    // L1 头文件家族：include/parser（GE/onnx）、include/graph（graphStatus/ge 错误码）
+    for extra in ["parser", "graph"] {
+        if let Ok(sub) = fs::read_dir(include_dir.join(extra)) {
+            targets.extend(sub.flatten().map(|e| e.path()));
+        }
     }
     for path in targets {
         if path.extension().is_some_and(|e| e == "h")
@@ -322,6 +331,8 @@ fn link_symbol_provenance(lib_dir: &Path, sym: &str) {
         "libnnopbase.so",
         "libaclnn.so",
         "libfmk_onnx_parser.so",
+        "libra.so",
+        "libascend_runtime.so",
     ];
     for lib in candidates {
         if lib_contains_symbol(lib_dir, lib, sym) {
@@ -466,10 +477,14 @@ fn main() {
             eprintln!("cann-sys: 已找到 CANN SDK: {}", base.display());
 
             // 符号存在性探测（跨版本漂移门控）
+            // check-cfg 对所有探测符号无条件声明（跨版本兼容：7.x 无某符号时
+            // cfg 不激活但合法），存在时再生成实际 cfg。
+            for sym in SYMBOLS {
+                println!("cargo::rustc-check-cfg=cfg({})", cfg_name(sym));
+            }
             let mut found = probe_symbols(&include_dir);
             found.sort();
             for sym in &found {
-                println!("cargo::rustc-check-cfg=cfg({})", cfg_name(sym));
                 println!("cargo::rustc-cfg={}", cfg_name(sym));
             }
             eprintln!(
@@ -504,7 +519,14 @@ fn main() {
                 // ---- GE 图引擎 C++ shim（L1-3）----
                 // GE 的 aclgrph* 是 C++ API，经 src/ge_shim.cc 桥接为 extern "C"，
                 // 编译为静态库 libge_shim.a 并链接（含 -lstdc++）。
-                build_ge_shim(&include_dir);
+                if found.iter().any(|s| s == "aclgrphParseONNX") {
+                    // 仅当 SDK 头文件含 aclgrph*（CANN 8.x+）才编译 shim；7.x 无 GE C API 跳过
+                    build_ge_shim(&include_dir);
+                } else {
+                    eprintln!(
+                        "cann-sys: SDK 未提供 aclgrph*（CANN 7.x 无 GE C API），跳过 ge_shim 编译/链接"
+                    );
+                }
                 // 符号探测：跨 SDK 版本/架构的 GE 符号库归属差异由
                 // link_symbol_provenance 兜底（基础库未含时自动补链）。
                 link_symbol_provenance(&lib_dir, "aclgrphParseONNX");

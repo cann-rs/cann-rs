@@ -14,8 +14,9 @@ pub struct Version;
 impl Version {
     /// 查询 CANN 版本字符串。
     ///
-    /// 调用 `aclInit(NULL)` 初始化后，通过 `aclsysGetVersionStr("CANN", ...)` 获取版本号（如 `"9.0.0"`）。
+    /// 存在 `aclsysGetVersionStr`（CANN 8.x+）时使用之；7.x 回退 `aclrtGetVersion`。
     /// 需要 NPU 驱动；驱动不可用时返回 `Err(Error)`。
+    #[cfg(cann_sdk_has_aclsys_get_version_str)]
     pub fn str() -> Result<String, Error> {
         // SAFETY: configPath 传 NULL 使用默认配置。
         let ret = unsafe { cann_sys::aclInit(std::ptr::null()) };
@@ -39,10 +40,25 @@ impl Version {
         Ok(c_str.to_str().unwrap_or_default().to_string())
     }
 
+    /// 版本查询回退路径（CANN 7.x：无 aclsys* 符号，用 `aclrtGetVersion`）。
+    #[cfg(not(cann_sdk_has_aclsys_get_version_str))]
+    pub fn str() -> Result<String, Error> {
+        // SAFETY: configPath 传 NULL 使用默认配置。
+        let ret = unsafe { cann_sys::aclInit(std::ptr::null()) };
+        if ret != cann_sys::ACL_SUCCESS {
+            return Err(Error::from(ret));
+        }
+        let (major, minor, patch) = rt_version()?;
+        // SAFETY: aclInit 成功后释放运行环境资源。
+        unsafe { cann_sys::aclFinalize(0) };
+        Ok(format!("{major}.{minor}.{patch}"))
+    }
+
     /// 查询 CANN 版本号（整数形式）。
     ///
-    /// 调用 `aclInit(NULL)` 初始化后，通过 `aclsysGetVersionNum("CANN", ...)` 获取版本号（如 `90_000_000`）。
+    /// 存在 `aclsysGetVersionNum`（CANN 8.x+）时使用之；7.x 由 `aclrtGetVersion` 推算。
     /// 需要 NPU 驱动；驱动不可用时返回 `Err(Error)`。
+    #[cfg(cann_sdk_has_aclsys_get_version_str)]
     pub fn num() -> Result<i32, Error> {
         // SAFETY: configPath 传 NULL 使用默认配置。
         let ret = unsafe { cann_sys::aclInit(std::ptr::null()) };
@@ -61,6 +77,33 @@ impl Version {
         }
         Ok(num)
     }
+
+    /// 版本号回退路径（CANN 7.x）：`major*10_000_000 + minor*100_000 + patch*1000`。
+    #[cfg(not(cann_sdk_has_aclsys_get_version_str))]
+    pub fn num() -> Result<i32, Error> {
+        // SAFETY: configPath 传 NULL 使用默认配置。
+        let ret = unsafe { cann_sys::aclInit(std::ptr::null()) };
+        if ret != cann_sys::ACL_SUCCESS {
+            return Err(Error::from(ret));
+        }
+        let (major, minor, patch) = rt_version()?;
+        // SAFETY: aclInit 成功后释放运行环境资源。
+        unsafe { cann_sys::aclFinalize(0) };
+        Ok(major * 10_000_000 + minor * 100_000 + patch * 1000)
+    }
+}
+
+#[cfg(all(feature = "ffi", not(cann_sdk_has_aclsys_get_version_str)))]
+fn rt_version() -> Result<(i32, i32, i32), Error> {
+    let mut major = 0i32;
+    let mut minor = 0i32;
+    let mut patch = 0i32;
+    // SAFETY: 三个参数均指向栈上有效的 i32 变量；需在 aclInit 之后调用。
+    let ret = unsafe { cann_sys::aclrtGetVersion(&mut major, &mut minor, &mut patch) };
+    if ret != cann_sys::ACL_SUCCESS {
+        return Err(Error::from(ret));
+    }
+    Ok((major, minor, patch))
 }
 
 /// 无 `ffi` 特性时的降级实现：不链接 `libascendcl`，统一返回"未启用"错误。
