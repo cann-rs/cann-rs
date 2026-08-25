@@ -4558,8 +4558,8 @@
 | `aclrtSynchronizeEvent(evt)` | `aclError aclrtSynchronizeEvent(aclrtEvent event)`（aclcppdevg_03_0088） | ✅ |
 | `aclrtMemcpy(dst, dst_max, src, count, kind)` | `aclError aclrtMemcpy(void *dst, size_t destMax, const void *src, size_t count, aclrtMemcpyKind kind)`（aclcppdevg_03_0105） | ✅ 与 plan 一致；
 `kind` 为 enum；"配置枚举值无效，系统内部按指针判断" |
-| `ACL_MEM_MALLOC_*` | 存在（aclrtMemMallocPolicy 取值） | ✅ |
-| `ACL_ERROR_RT_*` 码段 | 官方文档无独立码表页；需 `acl_error_code.h` 实机核对 | fail-closed 白名单机制保持 |
+| `ACL_MEM_MALLOC_*` | ✅ 2026-08-25 本地 SDK 8.5.0 `acl_rt.h` 核对：8 策略 0-7（HUGE_FIRST/HUGE_ONLY/NORMAL_ONLY/…_P2P×3/HUGE1G_ONLY/HUGE1G_ONLY_P2P）+ 标志位 0x0100/0x1000/0x100000；8.5 **无 `ACL_MEM_MALLOC_NORMAL_FIRST`**（旧版残留） | ✅ |
+| `ACL_ERROR_RT_*` 码段 | ✅ 2026-08-25 本地 SDK `include/acl/error_codes/rt_error_codes.h` 全量抄录（120 个）：107xxx 参数/句柄类、207xxx 资源/内存类（207001 分配/207002 释放/207018 DEVICE_OOM）、507xxx 驱动/执行类（507000 INTERNAL_ERROR、507899 DRV_INTERNAL_ERROR） | ✅ |
 
 ### 核对确认的其它事实（供 API 文档注释使用）
 

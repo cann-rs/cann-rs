@@ -8,6 +8,12 @@
 
 /// ACL 基础运行时类型与错误码。
 pub mod acl_base_rt;
+/// ACL 设备与 SOC 管理。
+pub mod acl_device;
+/// ACL 运行时错误码常量。
+pub mod acl_error_code;
+/// ACL 内存管理原语。
+pub mod acl_memory;
 /// ACL 运行时 FFI 函数声明与版本查询常量。
 pub mod acl_rt;
 

@@ -91,8 +91,8 @@ impl Error {
 - [x] ~~`aclrtMemcpy` 形参顺序（dst, dstMax, src, count, kind）~~ → ✅ 与官方完全一致（aclcppdevg_03_0105）
 - [x] ~~`aclrtGetSocName` 签名~~ → ✅ 官方 8.5 为 **`const char *aclrtGetSocName(void)`**（aclcppdevg_03_0048），无参返回指针，已改契约
 - [x] ~~`aclrtMalloc` 第三参数类型~~ → ✅ **`aclrtMemMallocPolicy` 枚举**（aclcppdevg_03_0095），已改契约
-- [ ] `ACL_ERROR_RT_*` 数值段（acl_error_code.h）——官方文档无码表页，待头文件实机核对
-- [ ] `ACL_MEM_MALLOC_HUGE_FIRST/…` 数值顺序（acl_rt.h）——待头文件核对
+- [x] ~~`ACL_ERROR_RT_*` 数值段（acl_error_code.h）~~ → ✅ 按 CANN 8.5.0 `include/acl/error_codes/rt_error_codes.h` 全量抄录（120 个，含出处注释，数值断言单测），**码段规律：107xxx=参数/句柄类、207xxx=资源/内存类、507xxx=驱动/执行类**
+- [x] ~~`ACL_MEM_MALLOC_HUGE_FIRST/…` 数值顺序（acl_rt.h）~~ → ✅ 按 CANN 8.5.0 `acl_rt.h` 核对：8 个策略 0-7（含 P2P/HUGE1G）+ 3 个标志位（0x0100/0x1000/0x100000）；`aclrtMemcpyKind` 0-7（8.5 无 `ACL_MEM_MALLOC_NORMAL_FIRST`，为旧版本残留）
 
 > 契约锚点侧同步要求（R3）：`reinfer/specs/002-ascend-backend/plan.md` 的 L0 契约表需同改：
 > `aclrtGetDeviceNum`/带缓冲区版 `aclrtGetSocName` 两处签名。此为跨仓库同步事项。

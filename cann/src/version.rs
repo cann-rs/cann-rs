@@ -4,11 +4,13 @@
 //! 这些调用需要 NPU 驱动支持；无驱动时返回错误。
 
 use crate::error::Error;
+#[cfg(feature = "ffi")]
 use std::ffi::CStr;
 
 /// CANN 版本查询接口。
 pub struct Version;
 
+#[cfg(feature = "ffi")]
 impl Version {
     /// 查询 CANN 版本字符串。
     ///
@@ -58,6 +60,32 @@ impl Version {
             return Err(Error::from(ret));
         }
         Ok(num)
+    }
+}
+
+/// 无 `ffi` 特性时的降级实现：不链接 `libascendcl`，统一返回"未启用"错误。
+#[cfg(not(feature = "ffi"))]
+impl Version {
+    /// `ffi` 未启用时的错误（code 为 -1，非 ACL 码；message 为中文说明）。
+    fn unavailable() -> Error {
+        Error {
+            code: -1,
+            message: "cann ffi 特性未启用，请以 --features ffi 构建".to_string(),
+        }
+    }
+
+    /// 查询 CANN 版本字符串（需要 `ffi` 特性）。
+    ///
+    /// 未启用 `ffi` 特性时返回 `Err(Error)`。
+    pub fn str() -> Result<String, Error> {
+        Err(Self::unavailable())
+    }
+
+    /// 查询 CANN 版本号（需要 `ffi` 特性）。
+    ///
+    /// 未启用 `ffi` 特性时返回 `Err(Error)`。
+    pub fn num() -> Result<i32, Error> {
+        Err(Self::unavailable())
     }
 }
 
