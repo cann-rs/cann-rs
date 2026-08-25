@@ -69,3 +69,18 @@ reinfer 昇腾后端完成"最小闭环"（L0 版本/设备诊断）后，需要
   采用 C++ shim 桥接 `aclgrph*`（C++ API）；`aclError`/`aclnnStatus` 同为 `i32` 别名
   （共用 `From<aclError>`，E0119 限制文档化）；workspace 使用 host 对齐缓冲区
   （官方建议 device 侧，真机验证失败则迁移 `DeviceBuffer`——待开发板）。
+
+## 板子验证记录（2026-08-25，Atlas 200I A2 类板子 / CANN 7.1.0）
+
+真机（`cargo test --features ffi -- --ignored`）结论：
+
+- **通过（13/16）**：Context/device（count/set/reset/soc_name）/Stream/Event/DeviceBuffer/HostBuffer/
+  Tensor/TensorList/Scalar/version（回退路径，aclnnInit 后启）全部真机往返成功
+- **受阻（3/16）**：Matmul/Softmax/RmsNorm 算子 —— `aclnnMatmulGetWorkspaceSize` 返回 **561103**，
+  **用板子官方头文件 C++ 最小复现（aclInit→setDevice→aclCreateTensor（nullptr stride/storage）→
+  GetWorkspaceSize）同样返回 561103**——结论：**7.1 板子 SDK 的 aclnn 算子运行时环境不可用
+  （算子实现/配置缺失），非本绑定问题**；Rust 绑定签名与官方 C++ 调用行为一致。
+  后续：核对板子 aclnn 算子环境（算子库/输出路径）或升级 CANN 8.5+ 后重验。
+- 板子 SDK 7.1 关键差异已适配：`aclInit` 进程级单次（OnceLock 幂等化，`aclFinalize` 板子无参
+  可兼容）、GE 图引擎 7.1 无 `aclgrph*`（包络降级）、版本查询回退 `aclrtGetVersion`、
+  全量库族链接 + `--allow-shlib-undefined`（.cargo/config.toml）。

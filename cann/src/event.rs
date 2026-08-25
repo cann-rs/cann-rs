@@ -181,14 +181,13 @@ mod arg_tests {
 #[cfg(all(feature = "ffi", test))]
 mod ffi_smoke {
     use super::*;
-    use crate::context::Context;
     use crate::device::{reset_device, set_device};
     use crate::stream::Stream;
 
     #[test]
     #[ignore = "requires NPU driver"]
     fn event_record_sync_and_stream_wait() {
-        let _ctx = Context::new().unwrap();
+        let _ctx = crate::test_shared_ctx();
         set_device(0).unwrap();
         let stream = Stream::new().unwrap();
         let event = Event::new().unwrap();

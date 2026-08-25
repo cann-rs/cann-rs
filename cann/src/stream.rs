@@ -142,13 +142,12 @@ mod tests {
 #[cfg(all(feature = "ffi", test))]
 mod ffi_smoke {
     use super::*;
-    use crate::context::Context;
     use crate::device::{reset_device, set_device};
 
     #[test]
     #[ignore = "requires NPU driver"]
     fn stream_create_sync_query_drop() {
-        let _ctx = Context::new().unwrap();
+        let _ctx = crate::test_shared_ctx();
         set_device(0).unwrap();
         let stream = Stream::new().unwrap();
         stream.synchronize().unwrap();

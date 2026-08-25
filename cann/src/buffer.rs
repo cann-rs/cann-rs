@@ -322,7 +322,6 @@ mod tests {
 #[cfg(all(feature = "ffi", test))]
 mod ffi_smoke {
     use super::*;
-    use crate::context::Context;
     use crate::device::{reset_device, set_device};
 
     const BUF_SIZE: usize = 64;
@@ -330,7 +329,7 @@ mod ffi_smoke {
     #[test]
     #[ignore = "requires NPU driver"]
     fn device_buffer_alloc_free_roundtrip() {
-        let _ctx = Context::new().unwrap();
+        let _ctx = crate::test_shared_ctx();
         set_device(0).unwrap();
         let buf = DeviceBuffer::alloc(BUF_SIZE, MemFlags::HugeFirst).unwrap();
         assert_eq!(buf.len(), BUF_SIZE);
@@ -343,7 +342,7 @@ mod ffi_smoke {
     #[test]
     #[ignore = "requires NPU driver"]
     fn host_buffer_alloc_free_roundtrip() {
-        let _ctx = Context::new().unwrap();
+        let _ctx = crate::test_shared_ctx();
         set_device(0).unwrap();
         let buf = HostBuffer::alloc(BUF_SIZE).unwrap();
         assert_eq!(buf.len(), BUF_SIZE);

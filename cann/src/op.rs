@@ -62,6 +62,7 @@ impl OpExecutor {
     fn prepare(
         get_workspace_size: impl FnOnce(*mut u64, *mut *mut c_void) -> cann_sys::aclnn_ops::aclnnStatus,
     ) -> Result<Self, Error> {
+        crate::ensure_aclnn_init()?;
         let mut ws_size: u64 = 0;
         let mut handle: *mut c_void = std::ptr::null_mut();
         // SAFETY: `ws_size`/`handle` 为有效输出槽位；闭包内传入的输入/输出张量
@@ -428,7 +429,6 @@ mod tests {
 mod ffi_smoke {
     use super::*;
     use crate::buffer::{DeviceBuffer, MemFlags};
-    use crate::context::Context;
     use crate::device::{reset_device, set_device};
     use crate::tensor::{DataType, Format};
 
@@ -436,13 +436,15 @@ mod ffi_smoke {
 
     /// 构造设备内存张量的测试辅助（FP16，N×N，行主序连续）。
     fn dev_tensor(buf: &DeviceBuffer, dims: [i64; 2]) -> Tensor {
+        // 连续视图：不传 strides/storage（官方最小用法；7.1 上显式 stride 与 storage
+        // 组合会触发参数校验 161002）
         Tensor::new(
             &dims,
             DataType::Fp16,
             Format::Nd,
             0,
-            Some(&[dims[1], 1]),
-            Some(&dims),
+            None,
+            None,
             buf.as_ptr().cast_mut().cast(),
         )
         .unwrap()
@@ -453,7 +455,7 @@ mod ffi_smoke {
     #[test]
     #[ignore = "requires NPU driver"]
     fn matmul_full_chain() {
-        let _ctx = Context::new().unwrap();
+        let _ctx = crate::test_shared_ctx();
         set_device(0).unwrap();
         let stream = Stream::new().unwrap();
         let buf_a = DeviceBuffer::alloc((N * N * 2) as usize, MemFlags::HugeFirst).unwrap();
@@ -476,7 +478,7 @@ mod ffi_smoke {
     #[test]
     #[ignore = "requires NPU driver"]
     fn softmax_full_chain() {
-        let _ctx = Context::new().unwrap();
+        let _ctx = crate::test_shared_ctx();
         set_device(0).unwrap();
         let stream = Stream::new().unwrap();
         let buf_x = DeviceBuffer::alloc((N * N * 2) as usize, MemFlags::HugeFirst).unwrap();
@@ -496,7 +498,7 @@ mod ffi_smoke {
     #[test]
     #[ignore = "requires NPU driver"]
     fn rms_norm_full_chain() {
-        let _ctx = Context::new().unwrap();
+        let _ctx = crate::test_shared_ctx();
         set_device(0).unwrap();
         let stream = Stream::new().unwrap();
         let buf_x = DeviceBuffer::alloc((N * N * 2) as usize, MemFlags::HugeFirst).unwrap();

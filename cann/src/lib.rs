@@ -36,3 +36,49 @@ pub mod stream;
 pub mod tensor;
 /// CANN 版本查询。
 pub mod version;
+
+#[cfg(feature = "ffi")]
+use crate::error::Error;
+
+/// 真机 smoke 共享上下文：CANN 的 `aclInit` 是进程级单次（7.x 重复调用返回
+/// `ACL_ERROR_REPEAT_INITIALIZE`），并行测试必须共享同一个实例（不 Drop）。
+#[cfg(all(test, feature = "ffi"))]
+pub(crate) fn test_shared_ctx() -> &'static context::Context {
+    use std::sync::OnceLock;
+    static CTX: OnceLock<context::Context> = OnceLock::new();
+    CTX.get_or_init(|| context::Context::new().expect("test shared aclInit"))
+}
+
+/// 进程级单次 `aclInit`（幂等）：CANN 初始化全局唯一——7.x 重复调用返回
+/// `ACL_ERROR_REPEAT_INITIALIZE`。`Context::new` 与版本探测共用本入口。
+#[cfg(feature = "ffi")]
+pub(crate) fn ensure_acl_init() -> Result<(), Error> {
+    use std::sync::OnceLock;
+    static RESULT: OnceLock<i32> = OnceLock::new();
+    let code = *RESULT.get_or_init(|| {
+        // SAFETY: configPath 传 NULL 使用默认配置；进程级初始化，幂等。
+        unsafe { cann_sys::aclInit(std::ptr::null()) }
+    });
+    if code == cann_sys::ACL_SUCCESS {
+        Ok(())
+    } else {
+        Err(Error::from(code))
+    }
+}
+
+/// 进程级单次 `aclnnInit`（幂等）：aclnn 算子 API 需在 `aclInit` 之后另行初始化，
+/// 重复调用返回失败。`OpExecutor` 首次创建时懒加载。
+#[cfg(feature = "ffi")]
+pub(crate) fn ensure_aclnn_init() -> Result<(), Error> {
+    use std::sync::OnceLock;
+    static RESULT: OnceLock<i32> = OnceLock::new();
+    let code = *RESULT.get_or_init(|| {
+        // SAFETY: configPath 传 NULL 使用默认配置；进程级初始化，幂等。
+        unsafe { cann_sys::aclnn_ops::aclnnInit(std::ptr::null()) }
+    });
+    if code == cann_sys::aclnn_ops::ACLNN_SUCCESS {
+        Ok(())
+    } else {
+        Err(Error::from(code))
+    }
+}

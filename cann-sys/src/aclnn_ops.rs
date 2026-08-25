@@ -10,6 +10,8 @@
 //! 指定 stream 上消费执行器完成计算。签名已按本地 CANN 8.5.0 SDK 头文件逐项核实
 //! （见 docs/specs/0002-l1-aclnn/plan.md verify-list）。
 
+#[cfg(cann_sys_ffi)]
+use std::ffi::c_char;
 use std::ffi::{c_int, c_void};
 
 /// aclnn 算子 API 返回码。
@@ -46,6 +48,18 @@ pub type aclOpExecutor = c_void;
 // aclnn_rms_norm.h）；本机 libascendcl.so 是否含 aclnn 符号由 build.rs 探测门控。
 #[cfg(cann_sys_ffi)]
 unsafe extern "C" {
+    /// aclnn 运行环境初始化（进程级单次；对应 `aclnnInit(NULL)`）。
+    ///
+    /// # Safety
+    /// - `configPath` 传 NULL 使用默认配置；须在使用任何 aclnn 算子 API 前成功调用。
+    pub fn aclnnInit(configPath: *const c_char) -> aclnnStatus;
+
+    /// aclnn 运行环境释放（对应 `aclnnFinalize()`）。
+    ///
+    /// # Safety
+    /// - 须在全部 aclnn 算子执行完成、不再使用时调用一次。
+    pub fn aclnnFinalize() -> aclnnStatus;
+
     /// C 函数原名：`aclnnMatmulGetWorkspaceSize`（两段式第一段）。
     /// 官方锚点：`include/aclnnop/aclnn_matmul.h`
     ///

@@ -29,12 +29,9 @@ impl Context {
     ///
     /// 失败时返回 `Err(Error)`：无 NPU 驱动时 `aclInit` 返回 100003/107xxx 类错误码。
     pub fn new() -> Result<Self, Error> {
-        // SAFETY: `configPath` 传 NULL 使用默认配置；`aclInit` 为进程级初始化，
-        // 不依赖线程或设备，可安全从任意线程调用。
-        let ret = unsafe { cann_sys::aclInit(std::ptr::null()) };
-        if ret != cann_sys::ACL_SUCCESS {
-            return Err(Error::from(ret));
-        }
+        // 进程级单次初始化（幂等）：重复 aclInit（7.x）返回 REPEAT_INITIALIZE；
+        // 多实例 Context 共享同一运行环境，语义不变且不冲突。
+        crate::ensure_acl_init()?;
         Ok(Context)
     }
 }
@@ -71,7 +68,6 @@ impl Context {
 #[cfg(all(test, not(feature = "ffi")))]
 mod tests {
     use super::*;
-
     #[test]
     fn new_returns_err_without_ffi() {
         assert!(Context::new().is_err());
@@ -80,12 +76,11 @@ mod tests {
 
 #[cfg(all(feature = "ffi", test))]
 mod ffi_smoke {
-    use super::*;
-
     #[test]
     #[ignore = "requires NPU driver"]
-    fn init_and_drop_roundtrip() {
-        let ctx = Context::new().unwrap();
-        drop(ctx); // 析构触发 aclFinalize(0)
+    fn init_once_shared() {
+        // aclInit 进程级单次：两次 new 会得到共享语义（重复调用返回 REPEAT_INITIALIZE），
+        // 这里只验证共享初始化路径可用。
+        let _ctx = crate::test_shared_ctx();
     }
 }

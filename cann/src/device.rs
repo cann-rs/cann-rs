@@ -158,12 +158,11 @@ mod tests {
 #[cfg(all(feature = "ffi", test))]
 mod ffi_smoke {
     use super::*;
-    use crate::context::Context;
 
     #[test]
     #[ignore = "requires NPU driver"]
     fn count_set_soc_name_reset() {
-        let _ctx = Context::new().unwrap();
+        let _ctx = crate::test_shared_ctx();
         let count = device_count().unwrap();
         assert!(count > 0, "device count should be > 0, got {count}");
         set_device(0).unwrap();
