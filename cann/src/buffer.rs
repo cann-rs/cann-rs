@@ -244,7 +244,10 @@ pub unsafe fn memcpy(
 
 /// 异步拷贝原语（`aclrtMemcpyAsync`，0106；`stream` 上排队执行）。
 ///
-/// # Safety：与 [`memcpy`] 相同；`stream` 必须指向有效流或为 NULL（默认流）。
+/// # Safety
+/// - `dst`/`src` 按 `kind` 必须为有效的 device/host 指针，`count <= destMax` 且不越源界；
+/// - `stream` 必须指向有效流（或为默认流语义——校验与 [`memcpy`] 相同）；
+/// - 涉及 device 端时，本线程已 `Context::new()` 并 `set_device`。
 pub unsafe fn memcpy_async(
     kind: MemcpyKind,
     dst: *mut std::ffi::c_void,
