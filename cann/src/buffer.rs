@@ -9,7 +9,7 @@
 
 use crate::error::Error;
 #[cfg(feature = "ffi")]
-use std::ffi::c_void;
+use c_void;
 
 /// 设备内存分配策略。
 ///
@@ -87,8 +87,8 @@ impl DeviceBuffer {
     /// 线程亲和性：分配属于当前线程绑定设备的上下文；缓冲区只能在绑定归属设备的
     /// 线程上使用（或先在该线程 `set_device`）。
     pub fn alloc(size: usize, flags: MemFlags) -> Result<Self, Error> {
-        let mut ptr: *mut c_void = std::ptr::null_mut();
-        // SAFETY: `ptr` 指向有效的 `*mut c_void` 输出槽位；调用前需 `aclInit` +
+        let mut ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+        // SAFETY: `ptr` 指向有效的 `*mut std::ffi::c_void` 输出槽位；调用前需 `aclInit` +
         // `set_device`（文档已注明）。
         let ret = unsafe { cann_sys::acl_memory::aclrtMalloc(&mut ptr, size, flags.as_policy()) };
         if ret != cann_sys::ACL_SUCCESS {
@@ -150,8 +150,8 @@ impl HostBuffer {
     /// 用法：需已完成 `Context::new()`；分配不依赖设备绑定。失败时返回 `Err(Error)`
     /// （如内存不足 207001 类错误码）。
     pub fn alloc(size: usize) -> Result<Self, Error> {
-        let mut ptr: *mut c_void = std::ptr::null_mut();
-        // SAFETY: `ptr` 指向有效的 `*mut c_void` 输出槽位；调用前需 `aclInit`（文档已注明）。
+        let mut ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+        // SAFETY: `ptr` 指向有效的 `*mut std::ffi::c_void` 输出槽位；调用前需 `aclInit`（文档已注明）。
         let ret = unsafe { cann_sys::acl_memory::aclrtMallocHost(&mut ptr, size) };
         if ret != cann_sys::ACL_SUCCESS {
             return Err(Error::from(ret));
@@ -193,6 +193,91 @@ impl Drop for HostBuffer {
 }
 
 /// 无 `ffi` 特性时的降级实现：不链接 `libascendcl`，统一返回"未启用"错误。
+/// 拷贝方向（对应 `ACL_MEMCPY_*` 常量）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemcpyKind {
+    /// Host → Device
+    HostToDevice,
+    /// Device → Host
+    DeviceToHost,
+    /// Device → Device
+    DeviceToDevice,
+}
+
+/// 同步拷贝原语（`aclrtMemcpy`，0105）。
+///
+/// 安全调用方（reinfer ascend 消费层）必须先在 `kernels::mem_check` 完成
+/// 方向/边界/归属校验；本原语不重复校验。
+///
+/// # Safety
+/// - `dst`/`src` 按 `kind` 必须为有效的 device/host 指针，`count <= destMax` 且不越源界；
+/// - 涉及 device 端时，本线程已 `Context::new()` 并 `set_device`。
+pub unsafe fn memcpy(
+    kind: MemcpyKind,
+    dst: *mut std::ffi::c_void,
+    src: *const std::ffi::c_void,
+    count: usize,
+) -> Result<(), Error> {
+    #[cfg(feature = "ffi")]
+    {
+        use cann_sys::{
+            ACL_MEMCPY_DEVICE_TO_DEVICE, ACL_MEMCPY_DEVICE_TO_HOST, ACL_MEMCPY_HOST_TO_DEVICE,
+        };
+        let k = match kind {
+            MemcpyKind::HostToDevice => ACL_MEMCPY_HOST_TO_DEVICE,
+            MemcpyKind::DeviceToHost => ACL_MEMCPY_DEVICE_TO_HOST,
+            MemcpyKind::DeviceToDevice => ACL_MEMCPY_DEVICE_TO_DEVICE,
+        };
+        let ret = unsafe { cann_sys::acl_memory::aclrtMemcpy(dst, count, src, count, k) };
+        if ret == cann_sys::ACL_SUCCESS {
+            Ok(())
+        } else {
+            Err(Error::from(ret))
+        }
+    }
+    #[cfg(not(feature = "ffi"))]
+    {
+        let _ = (kind, dst, src, count);
+        Err(unavailable())
+    }
+}
+
+/// 异步拷贝原语（`aclrtMemcpyAsync`，0106；`stream` 上排队执行）。
+///
+/// # Safety：与 [`memcpy`] 相同；`stream` 必须指向有效流或为 NULL（默认流）。
+pub unsafe fn memcpy_async(
+    kind: MemcpyKind,
+    dst: *mut std::ffi::c_void,
+    src: *const std::ffi::c_void,
+    count: usize,
+    stream: &crate::stream::Stream,
+) -> Result<(), Error> {
+    #[cfg(feature = "ffi")]
+    {
+        use cann_sys::{
+            ACL_MEMCPY_DEVICE_TO_DEVICE, ACL_MEMCPY_DEVICE_TO_HOST, ACL_MEMCPY_HOST_TO_DEVICE,
+        };
+        let k = match kind {
+            MemcpyKind::HostToDevice => ACL_MEMCPY_HOST_TO_DEVICE,
+            MemcpyKind::DeviceToHost => ACL_MEMCPY_DEVICE_TO_HOST,
+            MemcpyKind::DeviceToDevice => ACL_MEMCPY_DEVICE_TO_DEVICE,
+        };
+        let ret = unsafe {
+            cann_sys::acl_memory::aclrtMemcpyAsync(dst, count, src, count, k, stream.raw_handle())
+        };
+        if ret == cann_sys::ACL_SUCCESS {
+            Ok(())
+        } else {
+            Err(Error::from(ret))
+        }
+    }
+    #[cfg(not(feature = "ffi"))]
+    {
+        let _ = (kind, dst, src, count, stream);
+        Err(unavailable())
+    }
+}
+
 #[cfg(not(feature = "ffi"))]
 impl DeviceBuffer {
     /// 分配设备内存（需要 `ffi` 特性）。

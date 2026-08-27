@@ -150,6 +150,18 @@ unsafe extern "C" {
         count: usize,
         kind: aclrtMemcpyKind,
     ) -> aclError;
+
+    /// C 函数原名：`aclrtMemcpyAsync`（aclcppdevg_03_0106）。
+    ///
+    /// # Safety：与 `aclrtMemcpy` 相同；`stream` 为有效流句柄（NULL = 默认流）。
+    pub fn aclrtMemcpyAsync(
+        dst: *mut c_void,
+        destMax: usize,
+        src: *const c_void,
+        count: usize,
+        kind: aclrtMemcpyKind,
+        stream: *mut c_void,
+    ) -> aclError;
 }
 
 #[cfg(test)]
