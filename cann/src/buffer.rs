@@ -9,7 +9,7 @@
 
 use crate::error::Error;
 #[cfg(feature = "ffi")]
-use c_void;
+use std::ffi::c_void;
 
 /// 设备内存分配策略。
 ///
@@ -220,7 +220,7 @@ pub unsafe fn memcpy(
 ) -> Result<(), Error> {
     #[cfg(feature = "ffi")]
     {
-        use cann_sys::{
+        use cann_sys::acl_memory::{
             ACL_MEMCPY_DEVICE_TO_DEVICE, ACL_MEMCPY_DEVICE_TO_HOST, ACL_MEMCPY_HOST_TO_DEVICE,
         };
         let k = match kind {
@@ -257,7 +257,7 @@ pub unsafe fn memcpy_async(
 ) -> Result<(), Error> {
     #[cfg(feature = "ffi")]
     {
-        use cann_sys::{
+        use cann_sys::acl_memory::{
             ACL_MEMCPY_DEVICE_TO_DEVICE, ACL_MEMCPY_DEVICE_TO_HOST, ACL_MEMCPY_HOST_TO_DEVICE,
         };
         let k = match kind {
